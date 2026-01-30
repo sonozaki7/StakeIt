@@ -196,46 +196,46 @@ OMISE_SECRET_KEY=
 **Goal:** Create fully functional Telegram bot
 
 ### Task 5.1: Create Telegram Bot Core
-- [ ] Create file: `lib/telegram.ts`
-- [ ] Initialize Grammy Bot with token from env
-- [ ] Create command parser function for /commit
+- [x] Create file: `lib/telegram.ts`
+- [x] Initialize Grammy Bot with token from env
+- [x] Create command parser function for /commit
 
 ### Task 5.2: Implement /start Command
-- [ ] Add bot.command('start', ...) handler
-- [ ] Send welcome message with instructions
+- [x] Add bot.command('start', ...) handler
+- [x] Send welcome message with instructions
 
 ### Task 5.3: Implement /help Command
-- [ ] Add bot.command('help', ...) handler
-- [ ] Send command list with examples
+- [x] Add bot.command('help', ...) handler
+- [x] Send command list with examples
 
 ### Task 5.4: Implement /commit Command
-- [ ] Add bot.command('commit', ...) handler
-- [ ] Parse command: /commit "goal" amount weeks
-- [ ] Validate inputs (amount > 0, weeks 1-52)
-- [ ] Check if in group (not private chat)
-- [ ] Create goal via createGoal
-- [ ] Create payment via createPromptPayCharge
-- [ ] Save payment via createPayment
-- [ ] Send message with goal details
-- [ ] Send QR code image with ctx.replyWithPhoto
+- [x] Add bot.command('commit', ...) handler
+- [x] Parse command: /commit "goal" amount weeks
+- [x] Validate inputs (amount > 0, weeks 1-52)
+- [x] Check if in group (not private chat)
+- [x] Create goal via createGoal
+- [x] Create payment via createPromptPayCharge
+- [x] Save payment via createPayment
+- [x] Send message with goal details
+- [x] Send QR code image with ctx.replyWithPhoto
 
 ### Task 5.5: Implement /status Command
-- [ ] Add bot.command('status', ...) handler
-- [ ] Get user's goals via getGoalsByUser
-- [ ] Format and send list of active goals
+- [x] Add bot.command('status', ...) handler
+- [x] Get user's goals via getGoalsByUser
+- [x] Format and send list of active goals
 
 ### Task 5.6: Implement /goals Command
-- [ ] Add bot.command('goals', ...) handler
-- [ ] Check if in group
-- [ ] Get group's goals via getGoalsByGroup
-- [ ] Format and send list
+- [x] Add bot.command('goals', ...) handler
+- [x] Check if in group
+- [x] Get group's goals via getGoalsByGroup
+- [x] Format and send list
 
 ### Task 5.7: Implement Voting Buttons
-- [ ] Create function: sendVerificationRequest(goal, weekNumber)
+- [x] Create function: sendVerificationRequest(goal, weekNumber)
   - Build InlineKeyboard with Yes/No buttons
   - Callback data format: vote_yes_{goalId}_{week}
   - Send to group
-- [ ] Add bot.on('callback_query:data', ...) handler
+- [x] Add bot.on('callback_query:data', ...) handler
   - Parse callback data
   - Validate voter (not goal owner)
   - Get or create referee
@@ -245,24 +245,24 @@ OMISE_SECRET_KEY=
   - Answer callback query
 
 ### Task 5.8: Create Webhook Route
-- [ ] Create file: `app/api/telegram/webhook/route.ts`
-- [ ] Import webhookCallback from grammy
-- [ ] Export POST handler using webhookCallback
-- [ ] Export GET handler for verification
+- [x] Create file: `app/api/telegram/webhook/route.ts`
+- [x] Import webhookCallback from grammy
+- [x] Export POST handler using webhookCallback
+- [x] Export GET handler for verification
 
 ### Task 5.9: Add Notification Functions
-- [ ] In lib/telegram.ts, add:
+- [x] In lib/telegram.ts, add:
   - `notifyGoalActivated(goal)` - Send activation message to group
   - `notifyWeekResult(goal, week, passed)` - Send week result to group
   - `notifyGoalComplete(goal)` - Send final result to group
 
 ### Task 5.10: Update Payment Webhook
-- [ ] Update `app/api/payments/webhook/route.ts`:
+- [x] Update `app/api/payments/webhook/route.ts`:
   - After completePayment, check platform
   - If telegram, call notifyGoalActivated
 
 ### Task 5.11: Git Commit
-- [ ] Run: `git add -A && git commit -m "feat: add complete Telegram bot"`
+- [x] Run: `git add -A && git commit -m "feat: add complete Telegram bot"`
 
 ---
 
