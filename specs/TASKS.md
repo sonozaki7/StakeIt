@@ -12,22 +12,22 @@
 **Goal:** Initialize Next.js project with all dependencies
 
 ### Task 1.1: Initialize Next.js Project
-- [ ] Run: `npx create-next-app@14 . --typescript --tailwind --eslint --app --no-src-dir --import-alias "@/*"`
-- [ ] Verify `app/` directory exists (NOT `pages/`)
-- [ ] Verify `tailwind.config.ts` exists
+- [x] Run: `npx create-next-app@14 . --typescript --tailwind --eslint --app --no-src-dir --import-alias "@/*"`
+- [x] Verify `app/` directory exists (NOT `pages/`)
+- [x] Verify `tailwind.config.ts` exists
 
 ### Task 1.2: Install Dependencies
-- [ ] Run: `npm install @supabase/supabase-js grammy omise twilio zod`
-- [ ] Verify all packages in package.json dependencies
+- [x] Run: `npm install @supabase/supabase-js grammy omise twilio zod`
+- [x] Verify all packages in package.json dependencies
 
 ### Task 1.3: Create Folder Structure
-- [ ] Create folder: `lib/`
-- [ ] Create folder: `types/`
-- [ ] Create folder: `supabase/`
-- [ ] Create folder: `specs/` (if not exists)
+- [x] Create folder: `lib/`
+- [x] Create folder: `types/`
+- [x] Create folder: `supabase/`
+- [x] Create folder: `specs/` (if not exists)
 
 ### Task 1.4: Create Environment File
-- [ ] Create `.env.example` with ALL variables:
+- [x] Create `.env.example` with ALL variables:
 ```
 NEXT_PUBLIC_BASE_URL=http://localhost:3000
 NEXT_PUBLIC_SUPABASE_URL=
@@ -39,14 +39,14 @@ TWILIO_WHATSAPP_NUMBER=
 OMISE_PUBLIC_KEY=
 OMISE_SECRET_KEY=
 ```
-- [ ] Add `.env.local` to `.gitignore` (should already be there)
+- [x] Add `.env.local` to `.gitignore` (should already be there)
 
 ### Task 1.5: Update TypeScript Config
-- [ ] Verify `tsconfig.json` has `"strict": true`
-- [ ] Verify path alias `"@/*": ["./*"]` exists
+- [x] Verify `tsconfig.json` has `"strict": true`
+- [x] Verify path alias `"@/*": ["./*"]` exists
 
 ### Task 1.6: Git Commit
-- [ ] Run: `git add -A && git commit -m "feat: initialize Next.js project with dependencies"`
+- [x] Run: `git add -A && git commit -m "feat: initialize Next.js project with dependencies"`
 
 ---
 
