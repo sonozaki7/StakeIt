@@ -54,17 +54,17 @@ OMISE_SECRET_KEY=
 **Goal:** Create database schema, types, and client
 
 ### Task 2.1: Create Database Schema
-- [ ] Create file: `supabase/schema.sql`
-- [ ] Add complete SQL from PRD Section 2 including:
+- [x] Create file: `supabase/schema.sql`
+- [x] Add complete SQL from PRD Section 2 including:
   - All 5 tables (goals, referees, votes, weekly_results, payments)
   - All indexes
   - Updated_at trigger
   - RLS policies
-- [ ] Verify SQL is valid (no syntax errors)
+- [x] Verify SQL is valid (no syntax errors)
 
 ### Task 2.2: Create TypeScript Types
-- [ ] Create file: `types/index.ts`
-- [ ] Add ALL types from PRD Section 3:
+- [x] Create file: `types/index.ts`
+- [x] Add ALL types from PRD Section 3:
   - GoalStatus, Platform, PaymentStatus enums
   - Goal, Referee, Vote, WeeklyResult, Payment interfaces
   - CreateGoalRequest, CreateGoalResponse
@@ -72,12 +72,12 @@ OMISE_SECRET_KEY=
   - GoalWithDetails
   - OmiseChargeResponse, OmiseWebhookEvent
   - TwilioWebhookBody
-- [ ] Export all types
+- [x] Export all types
 
 ### Task 2.3: Create Supabase Client
-- [ ] Create file: `lib/supabase.ts`
-- [ ] Initialize Supabase client with service role key
-- [ ] Implement these functions:
+- [x] Create file: `lib/supabase.ts`
+- [x] Initialize Supabase client with service role key
+- [x] Implement these functions:
   - `createGoal(data: CreateGoalRequest): Promise<Goal>`
   - `getGoal(id: string): Promise<Goal | null>`
   - `getGoalWithDetails(id: string): Promise<GoalWithDetails | null>`
@@ -94,10 +94,10 @@ OMISE_SECRET_KEY=
   - `updateWeeklyResult(goalId: string, week: number, updates: Partial<WeeklyResult>): Promise<WeeklyResult>`
   - `createPayment(goalId: string, amountThb: number, qrUrl: string, chargeId: string): Promise<Payment>`
   - `completePayment(chargeId: string): Promise<Payment | null>`
-- [ ] Each function must have proper error handling with try/catch
+- [x] Each function must have proper error handling with try/catch
 
 ### Task 2.4: Git Commit
-- [ ] Run: `git add -A && git commit -m "feat: add database schema, types, and Supabase client"`
+- [x] Run: `git add -A && git commit -m "feat: add database schema, types, and Supabase client"`
 
 ---
 
