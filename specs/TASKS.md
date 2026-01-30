@@ -270,13 +270,13 @@ OMISE_SECRET_KEY=
 **Goal:** Create WhatsApp integration via Twilio
 
 ### Task 6.1: Create WhatsApp Client
-- [ ] Create file: `lib/whatsapp.ts`
-- [ ] Initialize Twilio client with credentials from env
-- [ ] Implement `sendWhatsAppMessage(to, body)`
-- [ ] Implement `sendWhatsAppMediaMessage(to, body, mediaUrl)`
+- [x] Create file: `lib/whatsapp.ts`
+- [x] Initialize Twilio client with credentials from env
+- [x] Implement `sendWhatsAppMessage(to, body)`
+- [x] Implement `sendWhatsAppMediaMessage(to, body, mediaUrl)`
 
 ### Task 6.2: Create Message Parser
-- [ ] Implement `parseWhatsAppMessage(body)`:
+- [x] Implement `parseWhatsAppMessage(body)`:
   - Check for "help" → return { command: 'help' }
   - Check for "status" → return { command: 'status' }
   - Check for "commit ..." → parse and return { command: 'commit', goalName, amount, weeks }
@@ -284,7 +284,7 @@ OMISE_SECRET_KEY=
   - Return null if no match
 
 ### Task 6.3: Create Message Handlers
-- [ ] Implement `handleWhatsAppMessage(from, body, profileName)`:
+- [x] Implement `handleWhatsAppMessage(from, body, profileName)`:
   - Parse message
   - If null, return help text
   - Switch on command:
@@ -294,25 +294,25 @@ OMISE_SECRET_KEY=
     - vote: process vote, return result
 
 ### Task 6.4: Create Webhook Route
-- [ ] Create file: `app/api/whatsapp/webhook/route.ts`
-- [ ] Implement POST handler:
+- [x] Create file: `app/api/whatsapp/webhook/route.ts`
+- [x] Implement POST handler:
   - Parse form data (Twilio sends form-encoded)
   - Extract From, Body, ProfileName
   - Call handleWhatsAppMessage
   - Return TwiML XML response
-- [ ] Implement GET handler for verification
+- [x] Implement GET handler for verification
 
 ### Task 6.5: Add WhatsApp Notifications
-- [ ] In lib/whatsapp.ts, add:
+- [x] In lib/whatsapp.ts, add:
   - `notifyWhatsAppGoalActivated(goal)`
   - `sendWhatsAppVerificationRequest(goal, week, refereePhone)`
 
 ### Task 6.6: Update Payment Webhook
-- [ ] Update `app/api/payments/webhook/route.ts`:
+- [x] Update `app/api/payments/webhook/route.ts`:
   - If platform === 'whatsapp', call notifyWhatsAppGoalActivated
 
 ### Task 6.7: Git Commit
-- [ ] Run: `git add -A && git commit -m "feat: add WhatsApp bot integration"`
+- [x] Run: `git add -A && git commit -m "feat: add WhatsApp bot integration"`
 
 ---
 
