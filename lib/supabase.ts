@@ -10,10 +10,19 @@ import {
   Platform,
 } from '@/types';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+export const supabase = supabaseUrl && supabaseKey
+  ? createClient(supabaseUrl, supabaseKey)
+  : null;
+
+function getClient() {
+  if (!supabase) {
+    throw new Error('Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
+  }
+  return supabase;
+}
 
 // ============================================================
 // GOALS
@@ -21,7 +30,7 @@ export const supabase = createClient(supabaseUrl, supabaseKey);
 
 export async function createGoal(data: CreateGoalRequest): Promise<Goal> {
   try {
-    const { data: goal, error } = await supabase
+    const { data: goal, error } = await getClient()
       .from('goals')
       .insert({
         user_id: data.userId,
@@ -56,7 +65,7 @@ export async function createGoal(data: CreateGoalRequest): Promise<Goal> {
 
 export async function getGoal(id: string): Promise<Goal | null> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('goals')
       .select('*')
       .eq('id', id)
@@ -99,7 +108,7 @@ export async function getGoalWithDetails(id: string): Promise<GoalWithDetails | 
 
 export async function updateGoal(id: string, updates: Partial<Goal>): Promise<Goal> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('goals')
       .update(updates)
       .eq('id', id)
@@ -116,7 +125,7 @@ export async function updateGoal(id: string, updates: Partial<Goal>): Promise<Go
 
 export async function getGoalsByUser(userId: string): Promise<Goal[]> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('goals')
       .select('*')
       .eq('user_id', userId)
@@ -132,7 +141,7 @@ export async function getGoalsByUser(userId: string): Promise<Goal[]> {
 
 export async function getGoalsByGroup(platform: string, groupId: string): Promise<Goal[]> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('goals')
       .select('*')
       .eq('platform', platform)
@@ -158,7 +167,7 @@ export async function createReferee(
   platform: Platform
 ): Promise<Referee> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('referees')
       .insert({
         goal_id: goalId,
@@ -179,7 +188,7 @@ export async function createReferee(
 
 export async function getReferees(goalId: string): Promise<Referee[]> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('referees')
       .select('*')
       .eq('goal_id', goalId);
@@ -198,7 +207,7 @@ export async function getRefereeByUserId(
   platform: string
 ): Promise<Referee | null> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('referees')
       .select('*')
       .eq('goal_id', goalId)
@@ -229,7 +238,7 @@ export async function submitVote(
   vote: boolean
 ): Promise<Vote> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('votes')
       .insert({
         goal_id: goalId,
@@ -254,7 +263,7 @@ export async function hasVoted(
   week: number
 ): Promise<boolean> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('votes')
       .select('id')
       .eq('goal_id', goalId)
@@ -276,7 +285,7 @@ export async function hasVoted(
 
 export async function getVotesForWeek(goalId: string, week: number): Promise<Vote[]> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('votes')
       .select('*')
       .eq('goal_id', goalId)
@@ -292,7 +301,7 @@ export async function getVotesForWeek(goalId: string, week: number): Promise<Vot
 
 async function getAllVotes(goalId: string): Promise<Vote[]> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('votes')
       .select('*')
       .eq('goal_id', goalId);
@@ -316,7 +325,7 @@ export async function getOrCreateWeeklyResult(
 ): Promise<WeeklyResult> {
   try {
     // Try to get existing
-    const { data: existing, error: getError } = await supabase
+    const { data: existing, error: getError } = await getClient()
       .from('weekly_results')
       .select('*')
       .eq('goal_id', goalId)
@@ -326,7 +335,7 @@ export async function getOrCreateWeeklyResult(
     if (existing && !getError) return existing as WeeklyResult;
 
     // Create new
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('weekly_results')
       .insert({
         goal_id: goalId,
@@ -351,7 +360,7 @@ export async function updateWeeklyResult(
   updates: Partial<WeeklyResult>
 ): Promise<WeeklyResult> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('weekly_results')
       .update(updates)
       .eq('goal_id', goalId)
@@ -369,7 +378,7 @@ export async function updateWeeklyResult(
 
 async function getWeeklyResults(goalId: string): Promise<WeeklyResult[]> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('weekly_results')
       .select('*')
       .eq('goal_id', goalId)
@@ -394,7 +403,7 @@ export async function createPayment(
   chargeId: string
 ): Promise<Payment> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getClient()
       .from('payments')
       .insert({
         goal_id: goalId,
@@ -424,7 +433,7 @@ export async function createPayment(
 export async function completePayment(chargeId: string): Promise<Payment | null> {
   try {
     // Find payment by charge ID
-    const { data: payment, error: findError } = await supabase
+    const { data: payment, error: findError } = await getClient()
       .from('payments')
       .select('*')
       .eq('omise_charge_id', chargeId)
@@ -436,7 +445,7 @@ export async function completePayment(chargeId: string): Promise<Payment | null>
     }
 
     // Update payment status
-    const { data: updated, error: updateError } = await supabase
+    const { data: updated, error: updateError } = await getClient()
       .from('payments')
       .update({
         status: 'completed',

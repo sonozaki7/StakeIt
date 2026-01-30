@@ -377,7 +377,7 @@ OMISE_SECRET_KEY=
 **Goal:** Complete documentation and testing
 
 ### Task 8.1: Create README
-- [ ] Create/update `README.md`:
+- [x] Create/update `README.md`:
   - Project description
   - Tech stack
   - Setup instructions
@@ -387,7 +387,7 @@ OMISE_SECRET_KEY=
   - Bot command reference
 
 ### Task 8.2: Update next.config.js
-- [ ] Add image domains for Omise QR codes:
+- [x] Add image domains for Omise QR codes:
 ```javascript
 images: {
   remotePatterns: [
@@ -397,11 +397,11 @@ images: {
 ```
 
 ### Task 8.3: Verify All Files Exist
-- [ ] Check all files from CLAUDE.md structure exist
-- [ ] Verify no TypeScript errors: `npm run build`
+- [x] Check all files from CLAUDE.md structure exist
+- [x] Verify no TypeScript errors: `npm run build`
 
 ### Task 8.4: Final Git Commit
-- [ ] Run: `git add -A && git commit -m "feat: complete StakeIt MVP"`
+- [x] Run: `git add -A && git commit -m "feat: complete StakeIt MVP"`
 
 ---
 
@@ -409,11 +409,11 @@ images: {
 
 After all tasks are done:
 
-- [ ] All API routes return valid JSON
-- [ ] Telegram commands work (/start, /help, /commit, /status)
-- [ ] WhatsApp commands work (help, commit, status, vote)
-- [ ] QR code generated for new goals
-- [ ] Voting updates weekly results
-- [ ] Frontend pages render without errors
-- [ ] No TypeScript errors
-- [ ] All files committed to git
+- [x] All API routes return valid JSON
+- [x] Telegram commands work (/start, /help, /commit, /status)
+- [x] WhatsApp commands work (help, commit, status, vote)
+- [x] QR code generated for new goals
+- [x] Voting updates weekly results
+- [x] Frontend pages render without errors
+- [x] No TypeScript errors
+- [x] All files committed to git

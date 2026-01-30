@@ -1,10 +1,12 @@
 import Omise from 'omise';
 import { OmiseWebhookEvent } from '@/types';
 
-const omiseClient = Omise({
-  publicKey: process.env.OMISE_PUBLIC_KEY,
-  secretKey: process.env.OMISE_SECRET_KEY,
-});
+function getOmiseClient() {
+  return Omise({
+    publicKey: process.env.OMISE_PUBLIC_KEY,
+    secretKey: process.env.OMISE_SECRET_KEY,
+  });
+}
 
 interface PromptPayChargeResult {
   chargeId: string;
@@ -22,14 +24,14 @@ export async function createPromptPayCharge(
     const amountSatangs = amountThb * 100;
 
     // Create source
-    const source = await omiseClient.sources.create({
+    const source = await getOmiseClient().sources.create({
       type: 'promptpay',
       amount: amountSatangs,
       currency: 'thb',
     });
 
     // Create charge
-    const charge = await omiseClient.charges.create({
+    const charge = await getOmiseClient().charges.create({
       amount: amountSatangs,
       currency: 'thb',
       source: source.id,
