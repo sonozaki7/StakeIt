@@ -105,35 +105,35 @@ OMISE_SECRET_KEY=
 **Goal:** Create all API endpoints
 
 ### Task 3.1: Create Health Check Endpoint
-- [ ] Create file: `app/api/health/route.ts`
-- [ ] Implement GET handler returning:
+- [x] Create file: `app/api/health/route.ts`
+- [x] Implement GET handler returning:
 ```json
 { "status": "ok", "timestamp": "...", "service": "StakeIt API" }
 ```
 
 ### Task 3.2: Create Goals List/Create Endpoint
-- [ ] Create file: `app/api/goals/route.ts`
-- [ ] Implement POST handler:
+- [x] Create file: `app/api/goals/route.ts`
+- [x] Implement POST handler:
   - Validate request with Zod schema
   - Call createGoal from supabase.ts
   - Call createPromptPayCharge from omise.ts (create stub for now)
   - Call createPayment from supabase.ts
   - Return goal with QR URL
-- [ ] Implement GET handler:
+- [x] Implement GET handler:
   - Accept query params: userId OR (platform + groupId)
   - Return filtered goals array
 
 ### Task 3.3: Create Single Goal Endpoint
-- [ ] Create file: `app/api/goals/[id]/route.ts`
-- [ ] Implement GET handler:
+- [x] Create file: `app/api/goals/[id]/route.ts`
+- [x] Implement GET handler:
   - Get goal ID from params
   - Call getGoalWithDetails
   - Return 404 if not found
   - Return goal with referees and weekly_results
 
 ### Task 3.4: Create Vote Endpoint
-- [ ] Create file: `app/api/goals/[id]/vote/route.ts`
-- [ ] Implement POST handler:
+- [x] Create file: `app/api/goals/[id]/vote/route.ts`
+- [x] Implement POST handler:
   - Validate request with Zod
   - Check goal exists and is active
   - Check voter is not goal owner
@@ -146,7 +146,7 @@ OMISE_SECRET_KEY=
   - Return vote status
 
 ### Task 3.5: Git Commit
-- [ ] Run: `git add -A && git commit -m "feat: add core API routes for goals and voting"`
+- [x] Run: `git add -A && git commit -m "feat: add core API routes for goals and voting"`
 
 ---
 
