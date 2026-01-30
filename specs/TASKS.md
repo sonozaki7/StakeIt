@@ -320,19 +320,19 @@ OMISE_SECRET_KEY=
 **Goal:** Create web interface with Tailwind
 
 ### Task 7.1: Update Global Styles
-- [ ] Update `app/globals.css`:
+- [x] Update `app/globals.css`:
   - Keep Tailwind imports
   - Add smooth scrolling
   - Add focus ring styles
 
 ### Task 7.2: Update Layout
-- [ ] Update `app/layout.tsx`:
+- [x] Update `app/layout.tsx`:
   - Set metadata (title, description)
   - Use Inter font
   - Wrap children in providers if needed
 
 ### Task 7.3: Create Landing Page
-- [ ] Update `app/page.tsx`:
+- [x] Update `app/page.tsx`:
   - Hero section with gradient background
   - Headline: "Put Your Money Where Your Mouth Is"
   - CTA buttons: Create Goal, Use Telegram
@@ -341,24 +341,24 @@ OMISE_SECRET_KEY=
   - Footer
 
 ### Task 7.4: Create Goal Creation Page
-- [ ] Create file: `app/goals/new/page.tsx`
-- [ ] Use 'use client' directive
-- [ ] Create form with useState:
+- [x] Create file: `app/goals/new/page.tsx`
+- [x] Use 'use client' directive
+- [x] Create form with useState:
   - Goal name input
   - Description textarea
   - Stake amount input (number)
   - Duration select (1, 2, 4, 8, 12, 26, 52 weeks)
-- [ ] Handle submit:
+- [x] Handle submit:
   - Call POST /api/goals
   - On success, show QR code
   - On error, show error message
-- [ ] Style with Tailwind (cards, inputs, buttons)
+- [x] Style with Tailwind (cards, inputs, buttons)
 
 ### Task 7.5: Create Goal Detail Page
-- [ ] Create file: `app/goals/[id]/page.tsx`
-- [ ] Use 'use client' directive
-- [ ] Fetch goal on mount with useEffect
-- [ ] Display:
+- [x] Create file: `app/goals/[id]/page.tsx`
+- [x] Use 'use client' directive
+- [x] Fetch goal on mount with useEffect
+- [x] Display:
   - Goal header (name, status badge)
   - Stats row (stake, current week, weeks passed)
   - Description if exists
@@ -366,10 +366,10 @@ OMISE_SECRET_KEY=
   - Weekly timeline (all weeks with status)
   - Referees list
   - Goal ID at bottom
-- [ ] Handle loading and error states
+- [x] Handle loading and error states
 
 ### Task 7.6: Git Commit
-- [ ] Run: `git add -A && git commit -m "feat: add frontend pages"`
+- [x] Run: `git add -A && git commit -m "feat: add frontend pages"`
 
 ---
 
