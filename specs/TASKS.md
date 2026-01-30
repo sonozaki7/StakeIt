@@ -154,23 +154,23 @@ OMISE_SECRET_KEY=
 **Goal:** Integrate Omise for PromptPay payments
 
 ### Task 4.1: Create Omise Client
-- [ ] Create file: `lib/omise.ts`
-- [ ] Initialize Omise with keys from env
-- [ ] Implement `createPromptPayCharge(amountThb, goalId, userId, description)`:
+- [x] Create file: `lib/omise.ts`
+- [x] Initialize Omise with keys from env
+- [x] Implement `createPromptPayCharge(amountThb, goalId, userId, description)`:
   - Create source with type 'promptpay'
   - Create charge with source and metadata
   - Extract QR URL from response
   - Return { chargeId, qrCodeUrl, amount }
-- [ ] Implement `parseWebhookEvent(body)`:
+- [x] Implement `parseWebhookEvent(body)`:
   - Validate event structure
   - Return typed event or null
-- [ ] Implement `isChargeComplete(event)`:
+- [x] Implement `isChargeComplete(event)`:
   - Check event.key === 'charge.complete'
   - Check event.data.status === 'successful'
 
 ### Task 4.2: Create Payment Webhook Endpoint
-- [ ] Create file: `app/api/payments/webhook/route.ts`
-- [ ] Implement POST handler:
+- [x] Create file: `app/api/payments/webhook/route.ts`
+- [x] Implement POST handler:
   - Parse JSON body
   - Call parseWebhookEvent
   - If charge.complete:
@@ -179,16 +179,16 @@ OMISE_SECRET_KEY=
     - Get updated goal
     - Trigger notification (stub for now)
   - Always return { received: true }
-- [ ] Implement GET handler returning status message
+- [x] Implement GET handler returning status message
 
 ### Task 4.3: Update Goals Route to Use Omise
-- [ ] Update `app/api/goals/route.ts` POST handler:
+- [x] Update `app/api/goals/route.ts` POST handler:
   - After creating goal, call createPromptPayCharge
   - Call createPayment with charge details
   - Return paymentQrUrl in response
 
 ### Task 4.4: Git Commit
-- [ ] Run: `git add -A && git commit -m "feat: add Omise payment integration"`
+- [x] Run: `git add -A && git commit -m "feat: add Omise payment integration"`
 
 ---
 
