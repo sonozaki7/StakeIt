@@ -17,24 +17,37 @@ import {
 import { createPromptPayCharge } from '@/lib/omise';
 import { Goal, Platform } from '@/types';
 
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
 const whatsappNumber = process.env.TWILIO_WHATSAPP_NUMBER;
 
-const twilioClient = accountSid && authToken ? twilio(accountSid, authToken) : null;
+let twilioClient: ReturnType<typeof twilio> | null = null;
+
+function getTwilioClient(): ReturnType<typeof twilio> | null {
+  if (twilioClient) return twilioClient;
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  if (!accountSid || !authToken) return null;
+  try {
+    twilioClient = twilio(accountSid, authToken);
+    return twilioClient;
+  } catch (error) {
+    console.error('Failed to initialize Twilio client:', error);
+    return null;
+  }
+}
 
 // ============================================================
 // MESSAGE SENDING
 // ============================================================
 
 export async function sendWhatsAppMessage(to: string, body: string): Promise<void> {
-  if (!twilioClient || !whatsappNumber) {
+  const client = getTwilioClient();
+  if (!client || !whatsappNumber) {
     console.error('Twilio not configured');
     return;
   }
 
   try {
-    await twilioClient.messages.create({
+    await client.messages.create({
       from: whatsappNumber,
       to,
       body,
@@ -50,13 +63,14 @@ export async function sendWhatsAppMediaMessage(
   body: string,
   mediaUrl: string
 ): Promise<void> {
-  if (!twilioClient || !whatsappNumber) {
+  const client = getTwilioClient();
+  if (!client || !whatsappNumber) {
     console.error('Twilio not configured');
     return;
   }
 
   try {
-    await twilioClient.messages.create({
+    await client.messages.create({
       from: whatsappNumber,
       to,
       body,
