@@ -20,10 +20,10 @@ import { Goal, Platform } from '@/types';
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
-  console.warn('TELEGRAM_BOT_TOKEN not set');
+  throw new Error('TELEGRAM_BOT_TOKEN is not set. Cannot initialize Telegram bot.');
 }
 
-export const bot = new Bot(token || 'dummy-token');
+export const bot = new Bot(token);
 
 // ============================================================
 // COMMAND PARSER
@@ -299,6 +299,11 @@ bot.on('callback_query:data', async (ctx) => {
     const votes = await getVotesForWeek(goalId, weekNumber);
     const yesVotes = votes.filter(v => v.vote).length;
     const noVotes = votes.filter(v => !v.vote).length;
+
+    if (referees.length === 0) {
+      await ctx.answerCallbackQuery({ text: '❌ No referees registered yet' });
+      return;
+    }
 
     const majorityNeeded = Math.floor(referees.length / 2) + 1;
     let passed: boolean | null = null;

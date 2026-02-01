@@ -31,7 +31,7 @@ export default function NewGoalPage(): React.ReactElement {
           stakeAmountThb: stakeAmount,
           durationWeeks,
           platform: 'web',
-          userId: `web_${Date.now()}`,
+          userId: `web_${crypto.randomUUID()}`,
           userName: 'Web User',
         }),
       });

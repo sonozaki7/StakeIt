@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createGoal, getGoalsByUser, getGoalsByGroup, createPayment } from '@/lib/supabase';
+import { createGoal, getGoalsByUser, getGoalsByGroup, createPayment, deleteGoal } from '@/lib/supabase';
 import { createPromptPayCharge } from '@/lib/omise';
 
 const createGoalSchema = z.object({
@@ -37,13 +37,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Create goal in database
     const goal = await createGoal(data);
 
-    // Create payment charge
-    const charge = await createPromptPayCharge(
-      data.stakeAmountThb,
-      goal.id,
-      data.userId,
-      `StakeIt: ${data.goalName}`
-    );
+    // Create payment charge — clean up goal if this fails
+    let charge;
+    try {
+      charge = await createPromptPayCharge(
+        data.stakeAmountThb,
+        goal.id,
+        data.userId,
+        `StakeIt: ${data.goalName}`
+      );
+    } catch (chargeError) {
+      console.error('Payment charge failed, deleting orphaned goal:', goal.id);
+      try {
+        await deleteGoal(goal.id);
+      } catch (cleanupError) {
+        console.error('Failed to clean up orphaned goal:', cleanupError);
+      }
+      throw chargeError;
+    }
 
     // Save payment record
     await createPayment(goal.id, data.stakeAmountThb, charge.qrCodeUrl, charge.chargeId);

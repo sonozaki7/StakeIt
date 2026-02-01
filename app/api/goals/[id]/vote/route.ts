@@ -56,6 +56,14 @@ export async function POST(
       );
     }
 
+    // Validate week bounds
+    if (week < 1 || week > goal.duration_weeks) {
+      return NextResponse.json(
+        { success: false, error: `Week must be between 1 and ${goal.duration_weeks}` },
+        { status: 400 }
+      );
+    }
+
     // Check voter is not goal owner
     if (refereeUserId === goal.user_id) {
       return NextResponse.json(
@@ -89,6 +97,13 @@ export async function POST(
 
     // Calculate results
     const referees = await getReferees(goalId);
+    if (referees.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'No referees registered yet' },
+        { status: 400 }
+      );
+    }
+
     const votes = await getVotesForWeek(goalId, week);
     const yesVotes = votes.filter(v => v.vote).length;
     const noVotes = votes.filter(v => !v.vote).length;

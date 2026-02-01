@@ -44,6 +44,10 @@ export async function createPromptPayCharge(
 
     const qrCodeUrl = charge.source?.scannable_code?.image?.download_uri || '';
 
+    if (!qrCodeUrl) {
+      throw new Error(`PromptPay charge created (${charge.id}) but QR code URL is missing`);
+    }
+
     return {
       chargeId: charge.id,
       qrCodeUrl,

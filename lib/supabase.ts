@@ -139,6 +139,20 @@ export async function getGoalsByUser(userId: string): Promise<Goal[]> {
   }
 }
 
+export async function deleteGoal(id: string): Promise<void> {
+  try {
+    const { error } = await getClient()
+      .from('goals')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error deleting goal:', error);
+    throw error;
+  }
+}
+
 export async function getGoalsByGroup(platform: string, groupId: string): Promise<Goal[]> {
   try {
     const { data, error } = await getClient()
@@ -459,8 +473,6 @@ export async function completePayment(chargeId: string): Promise<Payment | null>
 
     // Activate the goal
     const now = new Date();
-    const endDate = new Date(now);
-    endDate.setDate(endDate.getDate() + 7 * (payment as Payment).amount_thb); // This needs the goal's duration
 
     // Get goal to find duration
     const goal = await getGoal(payment.goal_id);

@@ -297,6 +297,10 @@ async function handleVote(
     const yesVotes = votes.filter(v => v.vote).length;
     const noVotes = votes.filter(v => !v.vote).length;
 
+    if (referees.length === 0) {
+      return '❌ No referees registered yet. Cannot process vote.';
+    }
+
     const majorityNeeded = Math.floor(referees.length / 2) + 1;
     let passed: boolean | null = null;
 

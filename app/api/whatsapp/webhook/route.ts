@@ -5,7 +5,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const formData = await request.formData();
     const from = formData.get('From') as string;
-    const body = formData.get('Body') as string;
+    const MAX_BODY_LENGTH = 1000;
+    const rawBody = formData.get('Body') as string;
+    const body = rawBody ? rawBody.slice(0, MAX_BODY_LENGTH) : rawBody;
     const profileName = formData.get('ProfileName') as string | undefined;
 
     if (!from || !body) {

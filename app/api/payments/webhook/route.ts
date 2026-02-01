@@ -19,6 +19,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // Complete the payment and activate the goal
         const payment = await completePayment(event.data.id);
 
+        if (payment && payment.goal_id !== goalId) {
+          console.error(
+            `Webhook goal_id mismatch: metadata says ${goalId}, payment belongs to ${payment.goal_id}`
+          );
+          return NextResponse.json({ received: true });
+        }
+
         if (payment) {
           const goal = await getGoal(goalId);
 
