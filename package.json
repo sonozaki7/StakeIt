@@ -9,7 +9,9 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@reclaimprotocol/js-sdk": "^4.10.1",
     "@supabase/supabase-js": "^2.93.3",
+    "exif-parser": "^0.1.12",
     "grammy": "^1.39.3",
     "next": "14.2.35",
     "omise": "^1.1.0",

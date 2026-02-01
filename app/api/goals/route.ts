@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createGoal, getGoalsByUser, getGoalsByGroup, createPayment, deleteGoal } from '@/lib/supabase';
+import { createGoal, getGoalsByUser, getGoalsByGroup, createPayment, deleteGoal, getActiveGoalCountForUserInGroup } from '@/lib/supabase';
 import { createPromptPayCharge } from '@/lib/omise';
 
 const createGoalSchema = z.object({
@@ -13,6 +13,7 @@ const createGoalSchema = z.object({
   groupName: z.string().optional(),
   userId: z.string().min(1),
   userName: z.string().min(1),
+  penaltyType: z.enum(['delayed_refund', 'split_to_group', 'charity_donation', 'forfeited']).optional(),
   referees: z.array(z.object({
     userId: z.string(),
     userName: z.string(),
@@ -33,6 +34,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const data = validation.data;
+
+    // Check 3-goal limit per user per group
+    if (data.groupId) {
+      const activeCount = await getActiveGoalCountForUserInGroup(data.userId, data.groupId);
+      if (activeCount >= 3) {
+        return NextResponse.json(
+          { success: false, error: 'Maximum 3 active goals per group. Complete or wait for existing goals to finish.' },
+          { status: 400 }
+        );
+      }
+    }
 
     // Create goal in database
     const goal = await createGoal(data);

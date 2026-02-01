@@ -49,10 +49,17 @@ export async function POST(
       );
     }
 
-    if (goal.status !== 'active') {
+    if (goal.status !== 'active' && goal.status !== 'pending_payment') {
       return NextResponse.json(
         { success: false, error: 'Goal is not active' },
         { status: 400 }
+      );
+    }
+
+    if (goal.verification_type === 'zktls' && refereeUserId !== 'system_verifier') {
+      return NextResponse.json(
+        { success: false, error: 'This goal uses automatic zkTLS verification' },
+        { status: 403 }
       );
     }
 
@@ -130,21 +137,30 @@ export async function POST(
 
     // If finalized, update goal progress
     if (passed !== null) {
+      // Re-read goal to get latest weeks_passed/weeks_failed (prevents stale-read race condition)
+      const freshGoal = await getGoal(goalId);
+      if (!freshGoal) {
+        return NextResponse.json(
+          { success: false, error: 'Goal not found during update' },
+          { status: 404 }
+        );
+      }
+
       const goalUpdate: Record<string, unknown> = {};
       if (passed) {
-        goalUpdate.weeks_passed = goal.weeks_passed + 1;
+        goalUpdate.weeks_passed = freshGoal.weeks_passed + 1;
       } else {
-        goalUpdate.weeks_failed = goal.weeks_failed + 1;
+        goalUpdate.weeks_failed = freshGoal.weeks_failed + 1;
       }
 
       // Check if goal is complete
-      const totalWeeksVoted = (passed ? goal.weeks_passed + 1 : goal.weeks_passed) +
-        (!passed ? goal.weeks_failed + 1 : goal.weeks_failed);
+      const newWeeksPassed = (goalUpdate.weeks_passed ?? freshGoal.weeks_passed) as number;
+      const newWeeksFailed = (goalUpdate.weeks_failed ?? freshGoal.weeks_failed) as number;
+      const totalWeeksVoted = newWeeksPassed + newWeeksFailed;
 
-      if (totalWeeksVoted >= goal.duration_weeks) {
-        const weeksPassed = passed ? goal.weeks_passed + 1 : goal.weeks_passed;
-        const majorityWeeks = Math.floor(goal.duration_weeks / 2) + 1;
-        goalUpdate.status = weeksPassed >= majorityWeeks ? 'completed' : 'failed';
+      if (totalWeeksVoted >= freshGoal.duration_weeks) {
+        const majorityWeeks = Math.floor(freshGoal.duration_weeks / 2) + 1;
+        goalUpdate.status = newWeeksPassed >= majorityWeeks ? 'completed' : 'failed';
       } else {
         goalUpdate.current_week = week + 1;
       }

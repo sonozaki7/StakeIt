@@ -8,6 +8,7 @@ export default function NewGoalPage(): React.ReactElement {
   const [description, setDescription] = useState('');
   const [stakeAmount, setStakeAmount] = useState(500);
   const [durationWeeks, setDurationWeeks] = useState(4);
+  const [penaltyType, setPenaltyType] = useState('forfeited');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<{
@@ -30,6 +31,7 @@ export default function NewGoalPage(): React.ReactElement {
           description: description || undefined,
           stakeAmountThb: stakeAmount,
           durationWeeks,
+          penaltyType,
           platform: 'web',
           userId: `web_${crypto.randomUUID()}`,
           userName: 'Web User',
@@ -190,6 +192,42 @@ export default function NewGoalPage(): React.ReactElement {
                 <option value={26}>26 weeks</option>
                 <option value={52}>52 weeks</option>
               </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Penalty if Failed
+              </label>
+              <div className="space-y-2">
+                {[
+                  { value: 'forfeited', label: 'Forfeited', desc: 'Stake is lost permanently' },
+                  { value: 'delayed_refund', label: 'Delayed Refund', desc: 'Refund after 30-day delay' },
+                  { value: 'split_to_group', label: 'Split to Group', desc: 'Stake split among group members' },
+                  { value: 'charity_donation', label: 'Charity Donation', desc: 'Stake donated to charity' },
+                ].map((option) => (
+                  <label
+                    key={option.value}
+                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                      penaltyType === option.value
+                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
+                        : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="penaltyType"
+                      value={option.value}
+                      checked={penaltyType === option.value}
+                      onChange={(e) => setPenaltyType(e.target.value)}
+                      className="text-indigo-600"
+                    />
+                    <div>
+                      <div className="font-medium text-gray-900 dark:text-white text-sm">{option.label}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{option.desc}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
             </div>
 
             <button

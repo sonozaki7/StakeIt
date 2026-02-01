@@ -13,6 +13,7 @@ import {
   updateWeeklyResult,
   updateGoal,
   createPayment,
+  getActiveGoalCountForUserInGroup,
 } from '@/lib/supabase';
 import { createPromptPayCharge } from '@/lib/omise';
 import { Goal, Platform } from '@/types';
@@ -213,6 +214,12 @@ async function handleCommit(
 ): Promise<string> {
   try {
     const userId = from.replace('whatsapp:', '');
+
+    // Check 3-goal limit (WhatsApp uses userId as groupId since there's no group support)
+    const activeCount = await getActiveGoalCountForUserInGroup(userId, userId);
+    if (activeCount >= 3) {
+      return '❌ You already have 3 active goals. Complete existing goals before creating new ones.';
+    }
 
     const goal = await createGoal({
       goalName: parsed.goalName!,

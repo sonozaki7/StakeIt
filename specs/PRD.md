@@ -1,837 +1,1157 @@
-# StakeIt MVP - Complete Technical PRD
+# StakeIt ZKTLS Integration — Technical PRD for Implementation
 
-## 1. PRODUCT OVERVIEW
+## Executive Summary
 
-### 1.1 What Is StakeIt?
-A commitment contract platform where users:
-1. Set a goal (e.g., "Exercise 3x per week")
-2. Stake money (e.g., ฿1,000 THB)
-3. Add friends as referees in a Telegram/WhatsApp group
-4. Friends vote weekly: "Did they complete it?"
-5. Complete majority of weeks → Get money back. Fail → Lose it.
+Add ZKTLS verification via Reclaim Protocol to StakeIt, enabling users to cryptographically prove goal completion using Duolingo data (and other providers). This eliminates awkward friend voting for goals with digital footprints while keeping manual verification as fallback.
 
-### 1.2 User Flow Diagram
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           USER JOURNEY                                   │
-└─────────────────────────────────────────────────────────────────────────┘
-
-[1] CREATE GOAL
-    User in Telegram Group: "/commit Exercise 1000 4"
-                                      │
-                                      ▼
-    Bot responds: "Goal created! Scan QR to pay ฿1,000"
-                                      │
-                                      ▼
-    [QR CODE IMAGE]
-    
-[2] PAY
-    User opens banking app → Scans QR → Pays ฿1,000
-                                      │
-                                      ▼
-    Omise webhook fires → API updates goal status to "active"
-                                      │
-                                      ▼
-    Bot messages group: "✅ Goal activated! Week 1 starts now!"
-
-[3] WEEKLY VERIFICATION (repeats each week)
-    Bot messages group: "Did @user exercise this week? [✅ Yes] [❌ No]"
-                                      │
-                                      ▼
-    Group members click buttons to vote
-                                      │
-                                      ▼
-    Majority YES → Week passes
-    Majority NO → Week fails
-
-[4] COMPLETION
-    After final week:
-    - If majority weeks passed → "🎉 Success! ฿1,000 refunded"
-    - If not → "😢 Failed. ฿1,000 forfeited"
-```
+**Primary Demo:** Telegram bot with Duolingo streak verification
+**Chain:** Base Sepolia (testnet)
+**On-chain Recording:** Thirdweb SDK
+**Time Budget:** 3-5 hours
 
 ---
 
-## 2. DATABASE SCHEMA
+## 1. WHAT WE'RE BUILDING
 
-### 2.1 Complete SQL Schema (supabase/schema.sql)
+### 1.1 Core Feature: ZKTLS Auto-Verification
+
+```
+CURRENT FLOW:
+User commits → Friends vote weekly → Awkward social dynamics
+
+NEW FLOW:
+User commits → User generates ZK proof from Duolingo → Auto-verified
+                                                    ↓
+                                          (Friends vote as fallback
+                                           for non-provable goals)
+```
+
+### 1.2 Verification Hierarchy
+
+| Tier | Condition | Verification Method |
+|------|-----------|---------------------|
+| 1 | Reclaim provider exists + proof valid | Auto-verify, no voting needed |
+| 2 | Reclaim provider exists + proof fails/missing | Require 1+ friend vote |
+| 3 | No Reclaim provider for goal type | Traditional 2+ friend voting |
+
+### 1.3 Supported Providers (MVP)
+
+| Goal Type | Reclaim Provider ID | What It Proves |
+|-----------|---------------------|----------------|
+| Duolingo streak | `7109889c` | Total XP earned |
+| Duolingo language | `04075047` | XP for specific language |
+| GitHub commits | `91d9a218` | Contribution count |
+| LeetCode | `e9e195f9` | Problem solving reputation |
+
+**For goals without providers:** Manual photo + location verification (existing system) + friend voting.
+
+---
+
+## 2. DATABASE SCHEMA ADDITIONS
+
+### 2.1 New Table: `zk_verifications`
 
 ```sql
--- ============================================================
--- STAKEIT DATABASE SCHEMA
--- Run this entire file in Supabase SQL Editor
--- ============================================================
+-- Add to supabase/schema.sql
 
--- Enable UUID generation
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- ============================================================
--- TABLE: goals
--- Main table storing all commitment goals
--- ============================================================
-CREATE TABLE goals (
-    -- Primary key
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    
-    -- User who created the goal
-    user_id TEXT NOT NULL,           -- Platform-specific user ID (Telegram ID, phone, etc.)
-    user_name TEXT NOT NULL,         -- Display name
-    
-    -- Goal details
-    goal_name TEXT NOT NULL,         -- e.g., "Exercise 3x per week"
-    description TEXT,                -- Optional longer description
-    
-    -- Stake configuration
-    stake_amount_thb INTEGER NOT NULL CHECK (stake_amount_thb > 0),
-    duration_weeks INTEGER NOT NULL CHECK (duration_weeks BETWEEN 1 AND 52),
-    
-    -- Status tracking
-    status TEXT NOT NULL DEFAULT 'pending_payment'
-        CHECK (status IN ('pending_payment', 'active', 'completed', 'failed', 'refunded')),
-    
-    -- Platform and group info
-    platform TEXT NOT NULL CHECK (platform IN ('telegram', 'whatsapp', 'web')),
-    group_id TEXT,                   -- Telegram chat ID or WhatsApp group ID
-    group_name TEXT,                 -- Human-readable group name
-    
-    -- Progress tracking
-    start_date TIMESTAMPTZ,          -- When goal became active (after payment)
-    end_date TIMESTAMPTZ,            -- Calculated: start_date + duration_weeks
-    current_week INTEGER DEFAULT 0,  -- 0 = not started, 1-N = current week
-    weeks_passed INTEGER DEFAULT 0,  -- Count of weeks that passed verification
-    weeks_failed INTEGER DEFAULT 0,  -- Count of weeks that failed verification
-    
-    -- Payment info
-    payment_id TEXT,                 -- Reference to payments table
-    payment_qr_url TEXT,             -- PromptPay QR code URL from Omise
-    
-    -- Timestamps
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- ============================================================
--- TABLE: referees
--- People who can vote on a goal's progress
--- ============================================================
-CREATE TABLE referees (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    
-    -- Link to goal
-    goal_id UUID NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
-    
-    -- Referee info
-    user_id TEXT NOT NULL,           -- Platform-specific user ID
-    user_name TEXT NOT NULL,         -- Display name
-    platform TEXT NOT NULL CHECK (platform IN ('telegram', 'whatsapp', 'web')),
-    
-    -- Timestamp
-    added_at TIMESTAMPTZ DEFAULT NOW(),
-    
-    -- One referee per user per goal per platform
-    UNIQUE(goal_id, user_id, platform)
-);
-
--- ============================================================
--- TABLE: votes
--- Individual votes from referees
--- ============================================================
-CREATE TABLE votes (
+CREATE TABLE zk_verifications (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     
     -- References
     goal_id UUID NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
-    referee_id UUID NOT NULL REFERENCES referees(id) ON DELETE CASCADE,
-    
-    -- Vote data
-    week_number INTEGER NOT NULL CHECK (week_number >= 1),
-    vote BOOLEAN NOT NULL,           -- true = yes/passed, false = no/failed
-    
-    -- Timestamp
-    voted_at TIMESTAMPTZ DEFAULT NOW(),
-    
-    -- One vote per referee per week per goal
-    UNIQUE(goal_id, referee_id, week_number)
-);
-
--- ============================================================
--- TABLE: weekly_results
--- Aggregated results for each week
--- ============================================================
-CREATE TABLE weekly_results (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    
-    -- Reference
-    goal_id UUID NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
-    
-    -- Week info
     week_number INTEGER NOT NULL CHECK (week_number >= 1),
     
-    -- Vote counts
-    yes_votes INTEGER DEFAULT 0,
-    no_votes INTEGER DEFAULT 0,
-    total_referees INTEGER NOT NULL,
+    -- Reclaim proof data
+    provider_id TEXT NOT NULL,
+    provider_name TEXT NOT NULL,
+    proof_hash TEXT,
+    proof_data JSONB,
     
-    -- Result (NULL = voting in progress)
-    passed BOOLEAN,                  -- NULL = pending, true = passed, false = failed
+    -- Extracted values
+    extracted_value TEXT,
+    extracted_parameters JSONB,
+    
+    -- Verification status
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'verified', 'failed', 'expired')),
+    
+    -- On-chain recording (optional)
+    chain_tx_hash TEXT,
+    chain_block_number INTEGER,
     
     -- Timestamps
-    verification_sent_at TIMESTAMPTZ,-- When we asked for votes
-    finalized_at TIMESTAMPTZ,        -- When result was determined
+    requested_at TIMESTAMPTZ DEFAULT NOW(),
+    verified_at TIMESTAMPTZ,
     
-    -- One result per week per goal
     UNIQUE(goal_id, week_number)
 );
 
--- ============================================================
--- TABLE: payments
--- Payment records from Omise
--- ============================================================
-CREATE TABLE payments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE INDEX idx_zk_verifications_goal ON zk_verifications(goal_id);
+CREATE INDEX idx_zk_verifications_status ON zk_verifications(status);
+
+ALTER TABLE zk_verifications ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service role access" ON zk_verifications FOR ALL USING (true);
+```
+
+### 2.2 Modify `goals` Table
+
+```sql
+ALTER TABLE goals ADD COLUMN verification_type TEXT DEFAULT 'manual'
+    CHECK (verification_type IN ('manual', 'zktls', 'hybrid'));
     
-    -- Reference
-    goal_id UUID NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
-    
-    -- Omise data
-    omise_charge_id TEXT,            -- Omise charge ID (chrg_xxx)
-    amount_thb INTEGER NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'completed', 'failed', 'refunded')),
-    
-    -- QR code
-    qr_code_url TEXT,
-    
-    -- Timestamps
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    completed_at TIMESTAMPTZ
-);
-
--- ============================================================
--- INDEXES for performance
--- ============================================================
-CREATE INDEX idx_goals_status ON goals(status);
-CREATE INDEX idx_goals_user_id ON goals(user_id);
-CREATE INDEX idx_goals_platform_group ON goals(platform, group_id);
-CREATE INDEX idx_referees_goal_id ON referees(goal_id);
-CREATE INDEX idx_referees_user_id ON referees(user_id);
-CREATE INDEX idx_votes_goal_week ON votes(goal_id, week_number);
-CREATE INDEX idx_weekly_results_goal ON weekly_results(goal_id);
-CREATE INDEX idx_payments_goal ON payments(goal_id);
-CREATE INDEX idx_payments_omise_id ON payments(omise_charge_id);
-
--- ============================================================
--- TRIGGER: Auto-update updated_at
--- ============================================================
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ language 'plpgsql';
-
-CREATE TRIGGER update_goals_updated_at
-    BEFORE UPDATE ON goals
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
--- ============================================================
--- ROW LEVEL SECURITY
--- For MVP, we allow all access via service role key
--- ============================================================
-ALTER TABLE goals ENABLE ROW LEVEL SECURITY;
-ALTER TABLE referees ENABLE ROW LEVEL SECURITY;
-ALTER TABLE votes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE weekly_results ENABLE ROW LEVEL SECURITY;
-ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
-
--- Allow service role full access
-CREATE POLICY "Service role access" ON goals FOR ALL USING (true);
-CREATE POLICY "Service role access" ON referees FOR ALL USING (true);
-CREATE POLICY "Service role access" ON votes FOR ALL USING (true);
-CREATE POLICY "Service role access" ON weekly_results FOR ALL USING (true);
-CREATE POLICY "Service role access" ON payments FOR ALL USING (true);
+ALTER TABLE goals ADD COLUMN reclaim_provider_id TEXT;
+ALTER TABLE goals ADD COLUMN reclaim_provider_name TEXT;
+ALTER TABLE goals ADD COLUMN zk_threshold_value INTEGER;
+ALTER TABLE goals ADD COLUMN zk_threshold_type TEXT;
 ```
 
 ---
 
 ## 3. TYPESCRIPT TYPES
 
-### 3.1 Complete Types (types/index.ts)
+### 3.1 Add to `types/index.ts`
 
 ```typescript
-// ============================================================
-// DATABASE ROW TYPES (match Supabase schema exactly)
-// ============================================================
+// ZKTLS / RECLAIM TYPES
 
-export type GoalStatus = 'pending_payment' | 'active' | 'completed' | 'failed' | 'refunded';
-export type Platform = 'telegram' | 'whatsapp' | 'web';
-export type PaymentStatus = 'pending' | 'completed' | 'failed' | 'refunded';
+export type VerificationType = 'manual' | 'zktls' | 'hybrid';
+export type ZkVerificationStatus = 'pending' | 'verified' | 'failed' | 'expired';
 
+export interface ZkVerification {
+  id: string;
+  goal_id: string;
+  week_number: number;
+  provider_id: string;
+  provider_name: string;
+  proof_hash: string | null;
+  proof_data: Record<string, unknown> | null;
+  extracted_value: string | null;
+  extracted_parameters: Record<string, unknown> | null;
+  status: ZkVerificationStatus;
+  chain_tx_hash: string | null;
+  chain_block_number: number | null;
+  requested_at: string;
+  verified_at: string | null;
+}
+
+// Extend Goal interface - add these fields
 export interface Goal {
-  id: string;
-  user_id: string;
-  user_name: string;
-  goal_name: string;
-  description: string | null;
-  stake_amount_thb: number;
-  duration_weeks: number;
-  status: GoalStatus;
-  platform: Platform;
-  group_id: string | null;
-  group_name: string | null;
-  start_date: string | null;
-  end_date: string | null;
-  current_week: number;
-  weeks_passed: number;
-  weeks_failed: number;
-  payment_id: string | null;
-  payment_qr_url: string | null;
-  created_at: string;
-  updated_at: string;
+  // ... existing fields ...
+  verification_type: VerificationType;
+  reclaim_provider_id: string | null;
+  reclaim_provider_name: string | null;
+  zk_threshold_value: number | null;
+  zk_threshold_type: string | null;
 }
 
-export interface Referee {
-  id: string;
-  goal_id: string;
-  user_id: string;
-  user_name: string;
-  platform: Platform;
-  added_at: string;
-}
-
-export interface Vote {
-  id: string;
-  goal_id: string;
-  referee_id: string;
-  week_number: number;
-  vote: boolean;
-  voted_at: string;
-}
-
-export interface WeeklyResult {
-  id: string;
-  goal_id: string;
-  week_number: number;
-  yes_votes: number;
-  no_votes: number;
-  total_referees: number;
-  passed: boolean | null;
-  verification_sent_at: string | null;
-  finalized_at: string | null;
-}
-
-export interface Payment {
-  id: string;
-  goal_id: string;
-  omise_charge_id: string | null;
-  amount_thb: number;
-  status: PaymentStatus;
-  qr_code_url: string | null;
-  created_at: string;
-  completed_at: string | null;
-}
-
-// ============================================================
-// API REQUEST/RESPONSE TYPES
-// ============================================================
-
-export interface CreateGoalRequest {
-  goalName: string;
-  description?: string;
-  stakeAmountThb: number;
-  durationWeeks: number;
-  platform: Platform;
-  groupId?: string;
-  groupName?: string;
-  userId: string;
-  userName: string;
-  referees?: Array<{
-    userId: string;
-    userName: string;
-    platform: Platform;
-  }>;
-}
-
-export interface CreateGoalResponse {
-  success: boolean;
-  goal?: {
-    id: string;
-    status: GoalStatus;
-    paymentQrUrl: string;
-    stakeAmountThb: number;
+export interface ReclaimProof {
+  identifier: string;
+  claimData: {
+    provider: string;
+    parameters: string;
+    context: string;
+    extractedParameters: Record<string, string>;
   };
-  error?: string;
+  signatures: string[];
+  witnesses: Array<{ id: string; url: string }>;
 }
 
-export interface VoteRequest {
-  refereeUserId: string;
-  refereeUserName?: string;
-  refereePlatform: Platform;
-  week: number;
-  vote: boolean;
-}
-
-export interface VoteResponse {
-  success: boolean;
-  weekStatus?: {
-    yesVotes: number;
-    noVotes: number;
-    totalReferees: number;
-    passed: boolean | null;
-  };
-  error?: string;
-}
-
-export interface GoalWithDetails extends Goal {
-  referees: Referee[];
-  weekly_results: WeeklyResult[];
-  votes: Vote[];
-}
-
-// ============================================================
-// EXTERNAL SERVICE TYPES
-// ============================================================
-
-export interface OmiseChargeResponse {
+export interface ReclaimProvider {
   id: string;
-  amount: number;
-  currency: string;
-  status: string;
-  source: {
-    type: string;
-    scannable_code?: {
-      image: {
-        download_uri: string;
-      };
-    };
-  };
-  metadata: Record<string, string>;
-}
-
-export interface OmiseWebhookEvent {
-  key: string;
-  data: {
-    id: string;
-    amount: number;
-    status: string;
-    metadata?: {
-      goal_id?: string;
-      user_id?: string;
-    };
-  };
-}
-
-export interface TwilioWebhookBody {
-  From: string;
-  Body: string;
-  ProfileName?: string;
-  To: string;
+  name: string;
+  goalKeywords: string[];
+  extractedField: string;
+  defaultThreshold?: number;
 }
 ```
 
 ---
 
-## 4. API ENDPOINTS SPECIFICATION
+## 4. RECLAIM PROTOCOL INTEGRATION
 
-### 4.1 GET /api/health
-**Purpose:** Health check endpoint
-**Response:**
-```json
-{
-  "status": "ok",
-  "timestamp": "2025-01-30T12:00:00.000Z",
-  "service": "StakeIt API"
-}
+### 4.1 Install Dependencies
+
+```bash
+npm install @reclaimprotocol/js-sdk
 ```
 
-### 4.2 POST /api/goals
-**Purpose:** Create a new goal and generate payment QR
-**Request Body:**
-```json
-{
-  "goalName": "Exercise 3x per week",
-  "description": "Go to gym or run outdoors",
-  "stakeAmountThb": 1000,
-  "durationWeeks": 4,
-  "platform": "telegram",
-  "groupId": "-1001234567890",
-  "groupName": "Fitness Group",
-  "userId": "123456789",
-  "userName": "john_doe",
-  "referees": []
-}
-```
-**Response (201 Created):**
-```json
-{
-  "success": true,
-  "goal": {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "status": "pending_payment",
-    "paymentQrUrl": "https://api.omise.co/charges/chrg_xxx/documents/qrcode.png",
-    "stakeAmountThb": 1000
-  }
-}
-```
-
-### 4.3 GET /api/goals
-**Purpose:** List goals (filter by userId or groupId)
-**Query Parameters:**
-- `userId` - Get goals for a specific user
-- `platform` + `groupId` - Get goals for a specific group
-**Response:**
-```json
-{
-  "success": true,
-  "goals": [...]
-}
-```
-
-### 4.4 GET /api/goals/[id]
-**Purpose:** Get single goal with all details
-**Response:**
-```json
-{
-  "success": true,
-  "goal": {
-    "id": "...",
-    "goal_name": "...",
-    "referees": [...],
-    "weekly_results": [...],
-    "votes": [...]
-  }
-}
-```
-
-### 4.5 POST /api/goals/[id]/vote
-**Purpose:** Submit a vote for a specific week
-**Request Body:**
-```json
-{
-  "refereeUserId": "111222333",
-  "refereeUserName": "alice",
-  "refereePlatform": "telegram",
-  "week": 1,
-  "vote": true
-}
-```
-**Response:**
-```json
-{
-  "success": true,
-  "weekStatus": {
-    "yesVotes": 2,
-    "noVotes": 1,
-    "totalReferees": 3,
-    "passed": true
-  }
-}
-```
-
-### 4.6 POST /api/telegram/webhook
-**Purpose:** Handle Telegram bot updates
-**Request:** Telegram Update object (handled by Grammy)
-**Response:** 200 OK
-
-### 4.7 POST /api/whatsapp/webhook
-**Purpose:** Handle incoming WhatsApp messages
-**Request:** Twilio form-encoded webhook
-**Response:** TwiML XML response
-
-### 4.8 POST /api/payments/webhook
-**Purpose:** Handle Omise payment events
-**Request:** Omise webhook event
-**Response:**
-```json
-{ "received": true }
-```
-
----
-
-## 5. TELEGRAM BOT SPECIFICATION
-
-### 5.1 Commands
-
-| Command | Format | Description |
-|---------|--------|-------------|
-| /start | `/start` | Welcome message with instructions |
-| /help | `/help` | List all commands |
-| /commit | `/commit "goal" amount weeks` | Create new goal |
-| /status | `/status` | Show user's active goals |
-| /goals | `/goals` | Show all goals in current group |
-
-### 5.2 Command Parsing Rules
-
-**/commit command format:**
-```
-/commit "Goal Name" 1000 4
-/commit Goal_Name 1000 4
-```
-- Goal name: quoted string OR single word (no spaces)
-- Amount: positive integer (THB)
-- Weeks: positive integer (1-52)
-
-**Regex for parsing:**
-```typescript
-/^\/commit\s+(?:"([^"]+)"|(\S+))\s+(\d+)\s+(\d+)$/
-```
-
-### 5.3 Inline Voting Buttons
-
-When verification is needed, send message with InlineKeyboard:
-```
-🎯 Weekly Check-in
-
-Did @john_doe complete their goal "Exercise 3x per week" this week?
-
-[✅ Yes, they did!] [❌ No]
-```
-
-Callback data format: `vote_yes_{goalId}_{weekNumber}` or `vote_no_{goalId}_{weekNumber}`
-
-### 5.4 Bot Response Templates
-
-**Welcome (/start):**
-```
-🎯 Welcome to StakeIt!
-
-Put your money where your mouth is. Create commitment contracts with your friends as referees.
-
-Commands:
-/commit "goal" amount weeks - Create a goal
-/status - Your active goals
-/help - All commands
-
-Example: /commit "Exercise 3x/week" 1000 4
-```
-
-**Goal Created:**
-```
-🎯 New Goal Created!
-
-Goal: {goalName}
-Stake: ฿{amount}
-Duration: {weeks} weeks
-By: @{userName}
-
-📱 Scan to pay and activate:
-[QR CODE IMAGE]
-```
-
-**Payment Confirmed:**
-```
-✅ Payment received!
-
-Goal "{goalName}" is now ACTIVE.
-Week 1 starts now.
-
-I'll check in with the group each week for verification.
-Good luck! 💪
-```
-
-**Week Verified:**
-```
-📊 Week {n} Results
-
-Goal: {goalName}
-By: @{userName}
-
-Votes: ✅ {yes} / ❌ {no}
-Result: {PASSED ✅ | FAILED ❌}
-
-Progress: {weeksPassed}/{totalWeeks} weeks passed
-```
-
----
-
-## 6. WHATSAPP BOT SPECIFICATION
-
-### 6.1 Text Commands (no slash prefix)
-
-| Command | Format | Description |
-|---------|--------|-------------|
-| help | `help` or `hi` | Show instructions |
-| commit | `commit "goal" amount weeks` | Create goal |
-| status | `status` | Show active goals |
-| vote | `vote {goalId} yes/no` | Vote on a goal |
-
-### 6.2 Response Format
-
-WhatsApp responses use Twilio TwiML:
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Message>Your response text here</Message>
-</Response>
-```
-
-### 6.3 Sending Media (QR Code)
-
-Use Twilio client to send media:
-```typescript
-await twilioClient.messages.create({
-  from: process.env.TWILIO_WHATSAPP_NUMBER,
-  to: userPhone,
-  body: 'Scan to pay:',
-  mediaUrl: [qrCodeUrl]
-});
-```
-
----
-
-## 7. PAYMENT FLOW (OMISE)
-
-### 7.1 Create PromptPay Charge
+### 4.2 Create `lib/reclaim.ts`
 
 ```typescript
-// 1. Create source
-const source = await omise.sources.create({
-  type: 'promptpay',
-  amount: amountThb * 100, // Convert to satangs
-  currency: 'thb',
-});
+// lib/reclaim.ts
+import { ReclaimProofRequest } from '@reclaimprotocol/js-sdk';
 
-// 2. Create charge
-const charge = await omise.charges.create({
-  amount: amountThb * 100,
-  currency: 'thb',
-  source: source.id,
-  metadata: {
-    goal_id: goalId,
-    user_id: userId,
+const RECLAIM_APP_ID = process.env.RECLAIM_APP_ID!;
+const RECLAIM_APP_SECRET = process.env.RECLAIM_APP_SECRET!;
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL!;
+
+// Supported providers registry
+export const RECLAIM_PROVIDERS: Record<string, ReclaimProvider> = {
+  duolingo_xp: {
+    id: '7109889c',
+    name: 'Duolingo - Verify totalXp',
+    goalKeywords: ['duolingo', 'language', 'spanish', 'french', 'thai', 'japanese', 'korean', 'german', 'learn', 'streak'],
+    extractedField: 'totalXp',
+    defaultThreshold: 100,
   },
-});
+  duolingo_language: {
+    id: '04075047',
+    name: 'Duolingo - Verify xp for language',
+    goalKeywords: ['duolingo spanish', 'duolingo french', 'duolingo thai'],
+    extractedField: 'xp',
+  },
+  github_contributions: {
+    id: '91d9a218',
+    name: 'GitHub - contributions',
+    goalKeywords: ['github', 'code', 'commit', 'programming', 'coding', 'opensource'],
+    extractedField: 'contributions',
+    defaultThreshold: 5,
+  },
+  leetcode: {
+    id: 'e9e195f9',
+    name: 'LeetCode Reputation',
+    goalKeywords: ['leetcode', 'algorithm', 'coding challenge', 'dsa'],
+    extractedField: 'reputation',
+  },
+};
 
-// 3. Get QR URL
-const qrUrl = charge.source.scannable_code.image.download_uri;
-```
-
-### 7.2 Webhook Events
-
-**charge.complete** - Payment successful
-```json
-{
-  "key": "charge.complete",
-  "data": {
-    "id": "chrg_xxx",
-    "status": "successful",
-    "metadata": {
-      "goal_id": "xxx"
+/**
+ * Find matching Reclaim provider for a goal name
+ */
+export function findProviderForGoal(goalName: string): ReclaimProvider | null {
+  const lowerGoal = goalName.toLowerCase();
+  
+  for (const provider of Object.values(RECLAIM_PROVIDERS)) {
+    for (const keyword of provider.goalKeywords) {
+      if (lowerGoal.includes(keyword.toLowerCase())) {
+        return provider;
+      }
     }
   }
+  
+  return null;
+}
+
+export function canUseZkVerification(goalName: string): boolean {
+  return findProviderForGoal(goalName) !== null;
+}
+
+/**
+ * Create verification request URL
+ */
+export async function createVerificationRequest(
+  goalId: string,
+  weekNumber: number,
+  providerId: string
+): Promise<{ requestUrl: string; sessionId: string }> {
+  
+  const reclaimProofRequest = await ReclaimProofRequest.init(
+    RECLAIM_APP_ID,
+    RECLAIM_APP_SECRET,
+    providerId
+  );
+  
+  // Add context for tracking
+  reclaimProofRequest.setContext(
+    goalId,
+    JSON.stringify({ goalId, weekNumber, timestamp: Date.now() })
+  );
+  
+  // Set callback URL
+  const callbackUrl = `${BASE_URL}/api/verify/reclaim/callback`;
+  reclaimProofRequest.setAppCallbackUrl(callbackUrl);
+  
+  const requestUrl = await reclaimProofRequest.getRequestUrl();
+  const statusUrl = await reclaimProofRequest.getStatusUrl();
+  const sessionId = statusUrl.split('/').pop() || '';
+  
+  return { requestUrl, sessionId };
+}
+
+/**
+ * Verify a Reclaim proof
+ */
+export async function verifyProof(proofData: ReclaimProof): Promise<{
+  valid: boolean;
+  extractedValue?: string;
+  extractedParameters?: Record<string, string>;
+  error?: string;
+}> {
+  try {
+    const { Reclaim } = await import('@reclaimprotocol/js-sdk');
+    const isValid = await Reclaim.verifySignedProof(proofData);
+    
+    if (!isValid) {
+      return { valid: false, error: 'Invalid proof signature' };
+    }
+    
+    const extractedParameters = proofData.claimData.extractedParameters || {};
+    const extractedValue = Object.values(extractedParameters)[0] || '';
+    
+    return { valid: true, extractedValue, extractedParameters };
+    
+  } catch (error) {
+    console.error('Proof verification error:', error);
+    return { valid: false, error: String(error) };
+  }
+}
+
+export function meetsThreshold(
+  extractedValue: string,
+  threshold: number | null,
+  thresholdType: string | null
+): boolean {
+  if (!threshold) return true;
+  
+  const value = parseInt(extractedValue, 10);
+  if (isNaN(value)) return false;
+  
+  return value >= threshold;
+}
+
+/**
+ * Generate short verification URL for Telegram
+ */
+export async function createTelegramVerificationLink(
+  goalId: string,
+  weekNumber: number,
+  providerId: string
+): Promise<string> {
+  const { requestUrl } = await createVerificationRequest(goalId, weekNumber, providerId);
+  const encodedUrl = encodeURIComponent(requestUrl);
+  return `${BASE_URL}/verify?redirect=${encodedUrl}&goal=${goalId}&week=${weekNumber}`;
+}
+
+export function formatVerificationStatus(verification: ZkVerification): string {
+  switch (verification.status) {
+    case 'verified':
+      return `✅ Verified via ${verification.provider_name}\nValue: ${verification.extracted_value}`;
+    case 'failed':
+      return `❌ Verification failed`;
+    case 'pending':
+      return `⏳ Waiting for proof...`;
+    case 'expired':
+      return `⏰ Verification expired`;
+    default:
+      return `Unknown status`;
+  }
 }
 ```
 
-On receiving this:
-1. Find payment by `omise_charge_id`
-2. Update payment status to 'completed'
-3. Update goal status to 'active'
-4. Set goal `start_date` to now
-5. Set goal `current_week` to 1
-6. Send notification to user/group
-
----
-
-## 8. VOTING LOGIC
-
-### 8.1 Vote Processing Rules
-
-1. **Who can vote:** Anyone in the group EXCEPT the goal owner
-2. **One vote per person per week:** Enforced by database UNIQUE constraint
-3. **First-time voters:** Automatically added as referees
-4. **Majority calculation:** `yesVotes > totalReferees / 2`
-
-### 8.2 Vote Processing Flow
+### 4.3 Create API Route: `app/api/verify/reclaim/route.ts`
 
 ```typescript
-async function processVote(goalId: string, refereeUserId: string, week: number, vote: boolean) {
-  // 1. Get or create referee
-  let referee = await getRefereeByUserId(goalId, refereeUserId);
-  if (!referee) {
-    referee = await createReferee(goalId, refereeUserId, userName, platform);
+import { NextRequest, NextResponse } from 'next/server';
+import { createVerificationRequest, findProviderForGoal } from '@/lib/reclaim';
+import { getGoal, createZkVerification } from '@/lib/supabase';
+
+export async function POST(request: NextRequest) {
+  try {
+    const { goalId, weekNumber } = await request.json();
+    
+    if (!goalId || !weekNumber) {
+      return NextResponse.json(
+        { success: false, error: 'Missing goalId or weekNumber' },
+        { status: 400 }
+      );
+    }
+    
+    const goal = await getGoal(goalId);
+    if (!goal) {
+      return NextResponse.json(
+        { success: false, error: 'Goal not found' },
+        { status: 404 }
+      );
+    }
+    
+    let providerId = goal.reclaim_provider_id;
+    let providerName = goal.reclaim_provider_name;
+    
+    if (!providerId) {
+      const provider = findProviderForGoal(goal.goal_name);
+      if (!provider) {
+        return NextResponse.json(
+          { success: false, error: 'No ZKTLS provider available for this goal type' },
+          { status: 400 }
+        );
+      }
+      providerId = provider.id;
+      providerName = provider.name;
+    }
+    
+    const { requestUrl, sessionId } = await createVerificationRequest(
+      goalId,
+      weekNumber,
+      providerId
+    );
+    
+    await createZkVerification({
+      goalId,
+      weekNumber,
+      providerId,
+      providerName: providerName || 'Unknown Provider',
+      status: 'pending',
+    });
+    
+    return NextResponse.json({
+      success: true,
+      requestUrl,
+      sessionId,
+      message: 'Open the URL to generate your proof',
+    });
+    
+  } catch (error) {
+    console.error('Reclaim verification request error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to create verification request' },
+      { status: 500 }
+    );
   }
-  
-  // 2. Check not already voted
-  if (await hasVoted(goalId, referee.id, week)) {
-    throw new Error('Already voted');
+}
+```
+
+### 4.4 Create Callback Route: `app/api/verify/reclaim/callback/route.ts`
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+import { verifyProof, meetsThreshold } from '@/lib/reclaim';
+import { 
+  updateZkVerification, 
+  getGoal, 
+  updateGoal,
+  updateWeeklyResult,
+  getOrCreateWeeklyResult 
+} from '@/lib/supabase';
+import { recordOnChain } from '@/lib/thirdweb';
+import { notifyZkVerificationComplete } from '@/lib/telegram';
+
+export async function POST(request: NextRequest) {
+  try {
+    const proofData = await request.json();
+    
+    console.log('Received Reclaim callback:', JSON.stringify(proofData, null, 2));
+    
+    // Extract goal info from context
+    let goalId: string;
+    let weekNumber: number;
+    
+    try {
+      const context = JSON.parse(proofData.claimData.context);
+      goalId = context.goalId || proofData.claimData.parameters;
+      weekNumber = context.weekNumber || 1;
+    } catch {
+      goalId = proofData.claimData.context;
+      weekNumber = 1;
+    }
+    
+    const verification = await verifyProof(proofData);
+    
+    if (!verification.valid) {
+      await updateZkVerification(goalId, weekNumber, {
+        status: 'failed',
+        proof_data: proofData,
+      });
+      
+      return NextResponse.json({ success: false, error: verification.error });
+    }
+    
+    const goal = await getGoal(goalId);
+    if (!goal) {
+      return NextResponse.json({ success: false, error: 'Goal not found' });
+    }
+    
+    const passedThreshold = meetsThreshold(
+      verification.extractedValue || '0',
+      goal.zk_threshold_value,
+      goal.zk_threshold_type
+    );
+    
+    // Update verification record
+    await updateZkVerification(goalId, weekNumber, {
+      status: passedThreshold ? 'verified' : 'failed',
+      proof_hash: proofData.signatures?.[0] || null,
+      proof_data: proofData,
+      extracted_value: verification.extractedValue,
+      extracted_parameters: verification.extractedParameters,
+      verified_at: new Date().toISOString(),
+    });
+    
+    // If verified, auto-pass the week
+    if (passedThreshold) {
+      await getOrCreateWeeklyResult(goalId, weekNumber, 0);
+      
+      await updateWeeklyResult(goalId, weekNumber, {
+        passed: true,
+        yes_votes: 1,
+        finalized_at: new Date().toISOString(),
+      });
+      
+      await updateGoal(goalId, {
+        weeks_passed: goal.weeks_passed + 1,
+        current_week: Math.min(weekNumber + 1, goal.duration_weeks),
+      });
+      
+      // Record on-chain (async)
+      recordOnChain(goalId, weekNumber, true, verification.extractedValue || '')
+        .catch(err => console.error('On-chain recording failed:', err));
+      
+      // Notify via Telegram
+      notifyZkVerificationComplete(goal, weekNumber, verification.extractedValue || '')
+        .catch(err => console.error('Telegram notification failed:', err));
+    }
+    
+    return NextResponse.json({
+      success: true,
+      verified: passedThreshold,
+      extractedValue: verification.extractedValue,
+    });
+    
+  } catch (error) {
+    console.error('Reclaim callback error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Callback processing failed' },
+      { status: 500 }
+    );
   }
-  
-  // 3. Submit vote
-  await submitVote(goalId, referee.id, week, vote);
-  
-  // 4. Calculate results
-  const referees = await getReferees(goalId);
-  const votes = await getVotesForWeek(goalId, week);
-  const yesVotes = votes.filter(v => v.vote).length;
-  const noVotes = votes.filter(v => !v.vote).length;
-  
-  // 5. Check if majority reached
-  const majorityNeeded = Math.floor(referees.length / 2) + 1;
-  let passed = null;
-  
-  if (yesVotes >= majorityNeeded) passed = true;
-  else if (noVotes >= majorityNeeded) passed = false;
-  
-  // 6. Update weekly result
-  await updateWeeklyResult(goalId, week, { yesVotes, noVotes, passed });
-  
-  // 7. If finalized, update goal
-  if (passed !== null) {
-    await updateGoalProgress(goalId, passed);
-  }
-  
-  return { yesVotes, noVotes, totalReferees: referees.length, passed };
 }
 ```
 
 ---
 
-## 9. FRONTEND PAGES
+## 5. THIRDWEB ON-CHAIN INTEGRATION
 
-### 9.1 Landing Page (app/page.tsx)
-- Hero section with tagline
-- How it works (4 steps)
-- Platform options (Telegram, WhatsApp, Web)
-- CTA buttons
+### 5.1 Install Dependencies
 
-### 9.2 Create Goal Page (app/goals/new/page.tsx)
-- Form with: goal name, description, amount, duration
-- On submit: call POST /api/goals
-- Show QR code on success
+```bash
+npm install thirdweb
+```
 
-### 9.3 Goal Detail Page (app/goals/[id]/page.tsx)
-- Goal info header (name, stake, status)
-- Progress stats (weeks passed/failed)
-- Weekly timeline showing each week's status
-- Referee list
-- QR code if pending payment
+### 5.2 Create `lib/thirdweb.ts`
 
----
+```typescript
+import { createThirdwebClient, getContract, prepareContractCall, sendTransaction } from 'thirdweb';
+import { baseSepolia } from 'thirdweb/chains';
+import { privateKeyToAccount } from 'thirdweb/wallets';
 
-## 10. ERROR HANDLING
+const THIRDWEB_SECRET_KEY = process.env.THIRDWEB_SECRET_KEY;
+const CONTRACT_ADDRESS = process.env.STAKEIT_CONTRACT_ADDRESS;
+const PRIVATE_KEY = process.env.WALLET_PRIVATE_KEY;
 
-### 10.1 API Error Responses
+let client: ReturnType<typeof createThirdwebClient> | null = null;
+let contract: ReturnType<typeof getContract> | null = null;
 
-All errors return:
-```json
-{
-  "success": false,
-  "error": "Human readable message",
-  "code": "ERROR_CODE",
-  "details": {}
+function getClient() {
+  if (!THIRDWEB_SECRET_KEY) {
+    console.warn('Thirdweb not configured');
+    return null;
+  }
+  
+  if (!client) {
+    client = createThirdwebClient({ secretKey: THIRDWEB_SECRET_KEY });
+  }
+  return client;
+}
+
+function getVerificationContract() {
+  const c = getClient();
+  if (!c || !CONTRACT_ADDRESS) return null;
+  
+  if (!contract) {
+    contract = getContract({
+      client: c,
+      chain: baseSepolia,
+      address: CONTRACT_ADDRESS,
+    });
+  }
+  return contract;
+}
+
+const RECORD_VERIFICATION_ABI = {
+  name: 'recordVerification',
+  type: 'function',
+  inputs: [
+    { name: 'goalId', type: 'string' },
+    { name: 'weekNumber', type: 'uint256' },
+    { name: 'passed', type: 'bool' },
+    { name: 'proofValue', type: 'string' },
+  ],
+  outputs: [],
+  stateMutability: 'nonpayable',
+} as const;
+
+export async function recordOnChain(
+  goalId: string,
+  weekNumber: number,
+  passed: boolean,
+  proofValue: string
+): Promise<{ txHash: string; blockNumber: number } | null> {
+  const verificationContract = getVerificationContract();
+  
+  if (!verificationContract || !PRIVATE_KEY) {
+    console.log('On-chain recording skipped - not configured');
+    return null;
+  }
+  
+  try {
+    const account = privateKeyToAccount({
+      client: getClient()!,
+      privateKey: PRIVATE_KEY,
+    });
+    
+    const transaction = prepareContractCall({
+      contract: verificationContract,
+      method: RECORD_VERIFICATION_ABI,
+      params: [goalId, BigInt(weekNumber), passed, proofValue],
+    });
+    
+    const result = await sendTransaction({ transaction, account });
+    
+    console.log('On-chain recording successful:', result.transactionHash);
+    
+    return {
+      txHash: result.transactionHash,
+      blockNumber: 0,
+    };
+    
+  } catch (error) {
+    console.error('On-chain recording failed:', error);
+    throw error;
+  }
+}
+
+export function getBaseScanUrl(txHash: string): string {
+  return `https://sepolia.basescan.org/tx/${txHash}`;
 }
 ```
 
-### 10.2 Common Error Codes
+### 5.3 Smart Contract: `contracts/StakeItVerifications.sol`
 
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| VALIDATION_ERROR | 400 | Invalid request body |
-| NOT_FOUND | 404 | Resource not found |
-| ALREADY_VOTED | 400 | User already voted this week |
-| SELF_VOTE | 403 | Cannot vote on own goal |
-| GOAL_NOT_ACTIVE | 400 | Goal is not in active status |
-| PAYMENT_FAILED | 500 | Omise payment creation failed |
-| DATABASE_ERROR | 500 | Supabase operation failed |
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.19;
+
+contract StakeItVerifications {
+    
+    struct Verification {
+        string goalId;
+        uint256 weekNumber;
+        bool passed;
+        string proofValue;
+        uint256 timestamp;
+        address recorder;
+    }
+    
+    Verification[] public verifications;
+    mapping(bytes32 => uint256) public verificationIndex;
+    mapping(string => uint256) public goalVerificationCount;
+    mapping(string => uint256) public goalPassedCount;
+    
+    event VerificationRecorded(
+        uint256 indexed index,
+        string goalId,
+        uint256 weekNumber,
+        bool passed,
+        string proofValue,
+        uint256 timestamp
+    );
+    
+    function recordVerification(
+        string calldata goalId,
+        uint256 weekNumber,
+        bool passed,
+        string calldata proofValue
+    ) external {
+        bytes32 key = keccak256(abi.encodePacked(goalId, weekNumber));
+        require(verificationIndex[key] == 0, "Already recorded");
+        
+        Verification memory v = Verification({
+            goalId: goalId,
+            weekNumber: weekNumber,
+            passed: passed,
+            proofValue: proofValue,
+            timestamp: block.timestamp,
+            recorder: msg.sender
+        });
+        
+        verifications.push(v);
+        uint256 index = verifications.length;
+        verificationIndex[key] = index;
+        
+        goalVerificationCount[goalId]++;
+        if (passed) {
+            goalPassedCount[goalId]++;
+        }
+        
+        emit VerificationRecorded(index - 1, goalId, weekNumber, passed, proofValue, block.timestamp);
+    }
+    
+    function getVerification(string calldata goalId, uint256 weekNumber) 
+        external view returns (bool exists, bool passed, string memory proofValue, uint256 timestamp) 
+    {
+        bytes32 key = keccak256(abi.encodePacked(goalId, weekNumber));
+        uint256 index = verificationIndex[key];
+        
+        if (index == 0) return (false, false, "", 0);
+        
+        Verification memory v = verifications[index - 1];
+        return (true, v.passed, v.proofValue, v.timestamp);
+    }
+    
+    function getTotalVerifications() external view returns (uint256) {
+        return verifications.length;
+    }
+    
+    function getGoalStats(string calldata goalId) external view returns (uint256 total, uint256 passed) {
+        return (goalVerificationCount[goalId], goalPassedCount[goalId]);
+    }
+}
+```
+
+---
+
+## 6. TELEGRAM BOT ENHANCEMENTS
+
+### 6.1 Add to `lib/telegram.ts`
+
+```typescript
+// ADD IMPORTS AT TOP
+import { 
+  findProviderForGoal, 
+  createTelegramVerificationLink,
+  canUseZkVerification,
+  RECLAIM_PROVIDERS,
+  ReclaimProvider
+} from './reclaim';
+import { getBaseScanUrl } from './thirdweb';
+import { getZkVerifications, createZkVerification } from './supabase';
+
+// ============================================================
+// NEW COMMANDS
+// ============================================================
+
+/**
+ * /verify command - Generate ZK verification link
+ */
+bot.command('verify', async (ctx) => {
+  try {
+    const chatId = ctx.chat?.id;
+    const userId = ctx.from?.id?.toString();
+    
+    if (!chatId || !userId) {
+      await ctx.reply('❌ Could not identify chat or user.');
+      return;
+    }
+    
+    const args = ctx.message?.text?.split(' ').slice(1) || [];
+    let goalId = args[0];
+    let goal;
+    
+    if (goalId) {
+      goal = await getGoal(goalId);
+      if (!goal || goal.user_id !== userId) {
+        await ctx.reply('❌ Goal not found or not yours.');
+        return;
+      }
+    } else {
+      const goals = await getGoalsByGroup('telegram', chatId.toString());
+      goal = goals.find(g => g.user_id === userId && g.status === 'active');
+      
+      if (!goal) {
+        await ctx.reply('❌ No active goals found. Create one with /commit first.');
+        return;
+      }
+    }
+    
+    const provider = findProviderForGoal(goal.goal_name);
+    
+    if (!provider) {
+      await ctx.reply(
+        `📋 *Manual Verification Required*\n\n` +
+        `Goal: "${goal.goal_name}" doesn't have automatic verification.\n\n` +
+        `Options:\n` +
+        `• Send a photo of your progress\n` +
+        `• Share your location\n` +
+        `• Wait for weekly friend voting\n\n` +
+        `_ZKTLS works with: Duolingo, GitHub, LeetCode_`,
+        { parse_mode: 'Markdown' }
+      );
+      return;
+    }
+    
+    const verifyUrl = await createTelegramVerificationLink(
+      goal.id,
+      goal.current_week,
+      provider.id
+    );
+    
+    await ctx.reply(
+      `🔐 *ZKTLS Verification*\n\n` +
+      `Goal: ${goal.goal_name}\n` +
+      `Week: ${goal.current_week} of ${goal.duration_weeks}\n` +
+      `Provider: ${provider.name}\n\n` +
+      `Tap the button below to generate your cryptographic proof:`,
+      { 
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '🔐 Generate Proof', url: verifyUrl }
+          ]]
+        }
+      }
+    );
+    
+  } catch (error) {
+    console.error('Verify command error:', error);
+    await ctx.reply('❌ Failed to generate verification link. Please try again.');
+  }
+});
+
+/**
+ * /providers command - List supported ZKTLS providers
+ */
+bot.command('providers', async (ctx) => {
+  const providerList = Object.values(RECLAIM_PROVIDERS)
+    .map(p => `• *${p.name}*\n  Keywords: ${p.goalKeywords.slice(0, 3).join(', ')}`)
+    .join('\n\n');
+  
+  await ctx.reply(
+    `🔐 *Supported Auto-Verification Providers*\n\n` +
+    `${providerList}\n\n` +
+    `_Create a goal with these keywords to enable ZKTLS!_\n` +
+    `Example: /commit "Learn Spanish on Duolingo" 500 4`,
+    { parse_mode: 'Markdown' }
+  );
+});
+
+/**
+ * /proof command - Show verification proof details
+ */
+bot.command('proof', async (ctx) => {
+  const args = ctx.message?.text?.split(' ').slice(1) || [];
+  const goalId = args[0];
+  
+  if (!goalId) {
+    await ctx.reply('Usage: /proof <goalId>');
+    return;
+  }
+  
+  try {
+    const goal = await getGoal(goalId);
+    if (!goal) {
+      await ctx.reply('❌ Goal not found.');
+      return;
+    }
+    
+    const zkVerifications = await getZkVerifications(goalId);
+    
+    if (zkVerifications.length === 0) {
+      await ctx.reply('📋 No ZKTLS proofs recorded for this goal yet.');
+      return;
+    }
+    
+    const proofList = zkVerifications.map(v => {
+      const statusEmoji = v.status === 'verified' ? '✅' : v.status === 'failed' ? '❌' : '⏳';
+      const chainLink = v.chain_tx_hash 
+        ? `[BaseScan](${getBaseScanUrl(v.chain_tx_hash)})` 
+        : 'Not recorded';
+      
+      return `*Week ${v.week_number}* ${statusEmoji}\n` +
+        `Provider: ${v.provider_name}\n` +
+        `Value: ${v.extracted_value || 'N/A'}\n` +
+        `On-chain: ${chainLink}`;
+    }).join('\n\n');
+    
+    await ctx.reply(
+      `🔐 *ZKTLS Proofs for Goal*\n\n` +
+      `Goal: ${goal.goal_name}\n\n` +
+      proofList,
+      { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } }
+    );
+    
+  } catch (error) {
+    console.error('Proof command error:', error);
+    await ctx.reply('❌ Failed to fetch proof details.');
+  }
+});
+
+// ============================================================
+// NOTIFICATION FUNCTION
+// ============================================================
+
+export async function notifyZkVerificationComplete(
+  goal: Goal,
+  weekNumber: number,
+  extractedValue: string,
+  txHash?: string
+): Promise<void> {
+  if (!goal.group_id) return;
+  
+  const baseScanLink = txHash ? `\n🔗 [View on BaseScan](${getBaseScanUrl(txHash)})` : '';
+  
+  await bot.api.sendMessage(
+    goal.group_id,
+    `✅ *Week ${weekNumber} Verified via ZKTLS!*\n\n` +
+    `Goal: ${goal.goal_name}\n` +
+    `By: ${goal.user_name}\n` +
+    `Proof: ${goal.reclaim_provider_name}\n` +
+    `Value: ${extractedValue}\n\n` +
+    `🎯 Progress: ${goal.weeks_passed + 1}/${goal.duration_weeks} weeks passed` +
+    baseScanLink,
+    { parse_mode: 'Markdown', link_preview_options: { is_disabled: true } }
+  );
+}
+
+// ============================================================
+// MODIFY: createGoalWithLimitCheck
+// ============================================================
+
+// Inside createGoalWithLimitCheck, after validation, add:
+
+const zkProvider = findProviderForGoal(goalName);
+
+const goalData: CreateGoalRequest = {
+  goalName,
+  stakeAmountThb: amount,
+  durationWeeks: weeks,
+  platform: 'telegram',
+  groupId: chatId.toString(),
+  groupName: chatTitle || 'Telegram Group',
+  userId,
+  userName,
+  // NEW: ZKTLS fields
+  verificationType: zkProvider ? 'zktls' : 'manual',
+  reclaimProviderId: zkProvider?.id || null,
+  reclaimProviderName: zkProvider?.name || null,
+  zkThresholdValue: zkProvider?.defaultThreshold || null,
+  zkThresholdType: 'minimum',
+};
+
+// Return zkProvider in the result so we can mention it in the response
+
+// ============================================================
+// MODIFY: Goal creation success message
+// ============================================================
+
+// After successful goal creation, modify the response:
+
+const zkNotice = zkProvider 
+  ? `\n\n🔐 *Auto-Verification Enabled*\nUse /verify to prove completion via ${zkProvider.name}`
+  : `\n\n📋 *Manual Verification*\nSend photos or wait for weekly voting`;
+
+await ctx.reply(
+  `🎯 *Goal Created!*\n\n` +
+  `Goal: ${goalName}\n` +
+  `Stake: ฿${amount}\n` +
+  `Duration: ${weeks} weeks\n` +
+  `By: @${userName}` +
+  zkNotice + `\n\n` +
+  `📱 Scan to pay and activate:`,
+  { parse_mode: 'Markdown' }
+);
+
+// ============================================================
+// MODIFY: /help command
+// ============================================================
+
+bot.command('help', async (ctx) => {
+  await ctx.reply(
+    `🎯 *StakeIt Bot Commands*\n\n` +
+    `*Creating Goals:*\n` +
+    `/commit "goal" amount weeks - Create a goal\n` +
+    `/stake "goal" amount weeks - Same as commit\n\n` +
+    `*Verification:*\n` +
+    `/verify - Generate ZKTLS proof for your goal\n` +
+    `/proof <goalId> - View verification proofs\n` +
+    `/providers - List supported auto-verification apps\n\n` +
+    `*Status:*\n` +
+    `/status - Your active goals\n` +
+    `/goals - All goals in this group\n\n` +
+    `*Tips:*\n` +
+    `• Include "Duolingo", "GitHub", or "LeetCode" in goal name for auto-verification\n` +
+    `• Send photos anytime to log progress\n` +
+    `• Max 3 active goals per person per group\n\n` +
+    `🔐 _ZKTLS = cryptographic proof, no friend voting needed!_`,
+    { parse_mode: 'Markdown' }
+  );
+});
+```
+
+---
+
+## 7. SUPABASE FUNCTIONS FOR ZK VERIFICATIONS
+
+### 7.1 Add to `lib/supabase.ts`
+
+```typescript
+// ZK VERIFICATION FUNCTIONS
+
+export async function createZkVerification(data: {
+  goalId: string;
+  weekNumber: number;
+  providerId: string;
+  providerName: string;
+  status: ZkVerificationStatus;
+}): Promise<ZkVerification> {
+  const client = getClient();
+  
+  const { data: verification, error } = await client
+    .from('zk_verifications')
+    .upsert({
+      goal_id: data.goalId,
+      week_number: data.weekNumber,
+      provider_id: data.providerId,
+      provider_name: data.providerName,
+      status: data.status,
+    }, { onConflict: 'goal_id,week_number' })
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return verification;
+}
+
+export async function updateZkVerification(
+  goalId: string,
+  weekNumber: number,
+  updates: Partial<ZkVerification>
+): Promise<void> {
+  const client = getClient();
+  
+  const { error } = await client
+    .from('zk_verifications')
+    .update(updates)
+    .eq('goal_id', goalId)
+    .eq('week_number', weekNumber);
+  
+  if (error) throw error;
+}
+
+export async function getZkVerifications(goalId: string): Promise<ZkVerification[]> {
+  const client = getClient();
+  
+  const { data, error } = await client
+    .from('zk_verifications')
+    .select('*')
+    .eq('goal_id', goalId)
+    .order('week_number', { ascending: true });
+  
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getZkVerification(
+  goalId: string,
+  weekNumber: number
+): Promise<ZkVerification | null> {
+  const client = getClient();
+  
+  const { data, error } = await client
+    .from('zk_verifications')
+    .select('*')
+    .eq('goal_id', goalId)
+    .eq('week_number', weekNumber)
+    .single();
+  
+  if (error && error.code !== 'PGRST116') throw error;
+  return data || null;
+}
+```
+
+---
+
+## 8. FRONTEND: VERIFICATION REDIRECT PAGE
+
+### 8.1 Create `app/verify/page.tsx`
+
+```typescript
+'use client';
+
+import { useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
+
+export default function VerifyRedirectPage() {
+  const searchParams = useSearchParams();
+  
+  useEffect(() => {
+    const redirectUrl = searchParams.get('redirect');
+    
+    if (redirectUrl) {
+      window.location.href = decodeURIComponent(redirectUrl);
+    }
+  }, [searchParams]);
+  
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
+        <h1 className="text-xl font-semibold text-gray-900">
+          Redirecting to verification...
+        </h1>
+        <p className="text-gray-600 mt-2">
+          You'll be asked to log in to prove your activity.
+        </p>
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## 9. ENVIRONMENT VARIABLES
+
+Add to `.env.local`:
+
+```env
+# Reclaim Protocol
+RECLAIM_APP_ID=your_app_id
+RECLAIM_APP_SECRET=your_app_secret
+
+# Thirdweb (optional)
+THIRDWEB_SECRET_KEY=your_thirdweb_secret
+STAKEIT_CONTRACT_ADDRESS=0x_deployed_address
+WALLET_PRIVATE_KEY=your_private_key
+
+# Base Sepolia
+BASE_SEPOLIA_RPC=https://sepolia.base.org
+```
+
+---
+
+## 10. IMPLEMENTATION ORDER
+
+| Hour | Task |
+|------|------|
+| 1 | Run SQL migration + Add TypeScript types + Supabase functions |
+| 2 | Create `lib/reclaim.ts` + API routes |
+| 3 | Add Telegram commands (/verify, /providers, /proof) |
+| 4 | Deploy contract via Thirdweb + Create `lib/thirdweb.ts` |
+| 5 | Test full flow + Polish |
+
+---
+
+## 11. TESTING CHECKLIST
+
+```
+[ ] Create goal with "Duolingo" in name → Detects ZKTLS provider
+[ ] /verify command → Generates verification link
+[ ] Click link → Redirects to Reclaim
+[ ] Complete Duolingo proof → Callback received
+[ ] Week auto-passes (no friend voting)
+[ ] Notification sent to group
+[ ] /proof shows verification details
+[ ] (Optional) Transaction on BaseScan
+```
+
+---
+
+## 12. EDGE CASES TO HANDLE
+
+| Case | Handling |
+|------|----------|
+| Goal without ZKTLS provider | Falls back to manual verification |
+| User not logged into Duolingo | Reclaim shows error, status stays pending |
+| Proof fails threshold | Week not auto-passed, needs friend voting |
+| Duplicate verification attempt | Upsert in database, no duplicate |
+| Callback timeout | Status shows pending, user can retry /verify |
+| Thirdweb not configured | Skip on-chain recording, still works |

@@ -5,6 +5,10 @@
 export type GoalStatus = 'pending_payment' | 'active' | 'completed' | 'failed' | 'refunded';
 export type Platform = 'telegram' | 'whatsapp' | 'web';
 export type PaymentStatus = 'pending' | 'completed' | 'failed' | 'refunded';
+export type PenaltyType = 'delayed_refund' | 'split_to_group' | 'charity_donation' | 'forfeited';
+export type FinalVoteStatus = 'not_started' | 'voting' | 'finalized';
+export type VerificationType = 'manual' | 'zktls' | 'hybrid';
+export type ZkVerificationStatus = 'pending' | 'verified' | 'failed' | 'expired';
 
 export interface Goal {
   id: string;
@@ -25,6 +29,13 @@ export interface Goal {
   weeks_failed: number;
   payment_id: string | null;
   payment_qr_url: string | null;
+  penalty_type: PenaltyType;
+  final_vote_status: FinalVoteStatus;
+  verification_type: VerificationType;
+  reclaim_provider_id: string | null;
+  reclaim_provider_name: string | null;
+  zk_threshold_value: number | null;
+  zk_threshold_type: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -70,6 +81,60 @@ export interface Payment {
   completed_at: string | null;
 }
 
+export interface ProgressUpdate {
+  id: string;
+  goal_id: string;
+  user_id: string;
+  week_number: number;
+  photo_urls: string[];
+  location_lat: number | null;
+  location_lng: number | null;
+  notes: string | null;
+  exif_timestamp: string | null;
+  submitted_at: string;
+}
+
+// ============================================================
+// ZKTLS / RECLAIM TYPES
+// ============================================================
+
+export interface ZkVerification {
+  id: string;
+  goal_id: string;
+  week_number: number;
+  provider_id: string;
+  provider_name: string;
+  proof_hash: string | null;
+  proof_data: Record<string, unknown> | null;
+  extracted_value: string | null;
+  extracted_parameters: Record<string, unknown> | null;
+  status: ZkVerificationStatus;
+  chain_tx_hash: string | null;
+  chain_block_number: number | null;
+  requested_at: string;
+  verified_at: string | null;
+}
+
+export interface ReclaimProof {
+  identifier: string;
+  claimData: {
+    provider: string;
+    parameters: string;
+    context: string;
+    extractedParameters: Record<string, string>;
+  };
+  signatures: string[];
+  witnesses: Array<{ id: string; url: string }>;
+}
+
+export interface ReclaimProvider {
+  id: string;
+  name: string;
+  goalKeywords: string[];
+  extractedField: string;
+  defaultThreshold?: number;
+}
+
 // ============================================================
 // API REQUEST/RESPONSE TYPES
 // ============================================================
@@ -84,6 +149,12 @@ export interface CreateGoalRequest {
   groupName?: string;
   userId: string;
   userName: string;
+  penaltyType?: PenaltyType;
+  verificationType?: VerificationType;
+  reclaimProviderId?: string | null;
+  reclaimProviderName?: string | null;
+  zkThresholdValue?: number | null;
+  zkThresholdType?: string | null;
   referees?: Array<{
     userId: string;
     userName: string;
@@ -125,6 +196,7 @@ export interface GoalWithDetails extends Goal {
   referees: Referee[];
   weekly_results: WeeklyResult[];
   votes: Vote[];
+  progress_updates: ProgressUpdate[];
 }
 
 // ============================================================

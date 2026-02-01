@@ -6,8 +6,11 @@ import {
   Vote,
   WeeklyResult,
   Payment,
+  ProgressUpdate,
   CreateGoalRequest,
   Platform,
+  ZkVerification,
+  ZkVerificationStatus,
 } from '@/types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -43,6 +46,12 @@ export async function createGoal(data: CreateGoalRequest): Promise<Goal> {
         group_id: data.groupId || null,
         group_name: data.groupName || null,
         status: 'pending_payment',
+        penalty_type: data.penaltyType || 'forfeited',
+        verification_type: data.verificationType || 'manual',
+        reclaim_provider_id: data.reclaimProviderId || null,
+        reclaim_provider_name: data.reclaimProviderName || null,
+        zk_threshold_value: data.zkThresholdValue || null,
+        zk_threshold_type: data.zkThresholdType || null,
       })
       .select()
       .single();
@@ -88,10 +97,11 @@ export async function getGoalWithDetails(id: string): Promise<GoalWithDetails | 
     const goal = await getGoal(id);
     if (!goal) return null;
 
-    const [referees, weeklyResults, votes] = await Promise.all([
+    const [referees, weeklyResults, votes, progressUpdates] = await Promise.all([
       getReferees(id),
       getWeeklyResults(id),
       getAllVotes(id),
+      getProgressUpdates(id),
     ]);
 
     return {
@@ -99,6 +109,7 @@ export async function getGoalWithDetails(id: string): Promise<GoalWithDetails | 
       referees,
       weekly_results: weeklyResults,
       votes,
+      progress_updates: progressUpdates,
     };
   } catch (error) {
     console.error('Error getting goal with details:', error);
@@ -149,6 +160,23 @@ export async function deleteGoal(id: string): Promise<void> {
     if (error) throw error;
   } catch (error) {
     console.error('Error deleting goal:', error);
+    throw error;
+  }
+}
+
+export async function deleteGoalsByUserInGroup(userId: string, groupId: string): Promise<number> {
+  try {
+    const { data, error } = await getClient()
+      .from('goals')
+      .delete()
+      .eq('user_id', userId)
+      .eq('group_id', groupId)
+      .select('id');
+
+    if (error) throw error;
+    return data?.length || 0;
+  } catch (error) {
+    console.error('Error deleting goals by user in group:', error);
     throw error;
   }
 }
@@ -443,6 +471,253 @@ export async function createPayment(
     throw error;
   }
 }
+
+// ============================================================
+// PROGRESS UPDATES
+// ============================================================
+
+export async function getActiveGoalCountForUserInGroup(
+  userId: string,
+  groupId: string
+): Promise<number> {
+  try {
+    const { count, error } = await getClient()
+      .from('goals')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('group_id', groupId)
+      .in('status', ['active', 'pending_payment']);
+
+    if (error) throw error;
+    return count || 0;
+  } catch (error) {
+    console.error('Error getting active goal count:', error);
+    throw error;
+  }
+}
+
+export async function createProgressUpdate(
+  goalId: string,
+  data: {
+    userId: string;
+    weekNumber: number;
+    photoUrls?: string[];
+    locationLat?: number;
+    locationLng?: number;
+    notes?: string;
+    exifTimestamp?: string;
+  }
+): Promise<ProgressUpdate> {
+  try {
+    const { data: update, error } = await getClient()
+      .from('progress_updates')
+      .insert({
+        goal_id: goalId,
+        user_id: data.userId,
+        week_number: data.weekNumber,
+        photo_urls: data.photoUrls || [],
+        location_lat: data.locationLat || null,
+        location_lng: data.locationLng || null,
+        notes: data.notes || null,
+        exif_timestamp: data.exifTimestamp || null,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return update as ProgressUpdate;
+  } catch (error) {
+    console.error('Error creating progress update:', error);
+    throw error;
+  }
+}
+
+export async function getProgressUpdates(goalId: string): Promise<ProgressUpdate[]> {
+  try {
+    const { data, error } = await getClient()
+      .from('progress_updates')
+      .select('*')
+      .eq('goal_id', goalId)
+      .order('submitted_at', { ascending: true });
+
+    if (error) throw error;
+    return (data as ProgressUpdate[]) || [];
+  } catch (error) {
+    console.error('Error getting progress updates:', error);
+    throw error;
+  }
+}
+
+export async function getLatestProgressUpdate(
+  goalId: string,
+  userId: string
+): Promise<ProgressUpdate | null> {
+  try {
+    const { data, error } = await getClient()
+      .from('progress_updates')
+      .select('*')
+      .eq('goal_id', goalId)
+      .eq('user_id', userId)
+      .order('submitted_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null;
+      throw error;
+    }
+
+    return data as ProgressUpdate;
+  } catch (error) {
+    console.error('Error getting latest progress update:', error);
+    throw error;
+  }
+}
+
+export async function updateProgressUpdate(
+  id: string,
+  updates: Partial<ProgressUpdate>
+): Promise<ProgressUpdate> {
+  try {
+    const { data, error } = await getClient()
+      .from('progress_updates')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as ProgressUpdate;
+  } catch (error) {
+    console.error('Error updating progress update:', error);
+    throw error;
+  }
+}
+
+export async function uploadProgressPhoto(
+  goalId: string,
+  userId: string,
+  fileBuffer: Buffer,
+  fileName: string
+): Promise<string> {
+  try {
+    const path = `${goalId}/${userId}/${Date.now()}_${fileName}`;
+    const { error } = await getClient()
+      .storage
+      .from('progress-photos')
+      .upload(path, fileBuffer, {
+        contentType: 'image/jpeg',
+        upsert: false,
+      });
+
+    if (error) throw error;
+
+    const { data: urlData } = getClient()
+      .storage
+      .from('progress-photos')
+      .getPublicUrl(path);
+
+    return urlData.publicUrl;
+  } catch (error) {
+    console.error('Error uploading progress photo:', error);
+    throw error;
+  }
+}
+
+// ============================================================
+// PAYMENTS
+// ============================================================
+
+// ============================================================
+// ZK VERIFICATIONS
+// ============================================================
+
+export async function createZkVerification(data: {
+  goalId: string;
+  weekNumber: number;
+  providerId: string;
+  providerName: string;
+  status: ZkVerificationStatus;
+}): Promise<ZkVerification> {
+  try {
+    const { data: verification, error } = await getClient()
+      .from('zk_verifications')
+      .upsert({
+        goal_id: data.goalId,
+        week_number: data.weekNumber,
+        provider_id: data.providerId,
+        provider_name: data.providerName,
+        status: data.status,
+      }, { onConflict: 'goal_id,week_number' })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return verification as ZkVerification;
+  } catch (error) {
+    console.error('Error creating ZK verification:', error);
+    throw error;
+  }
+}
+
+export async function updateZkVerification(
+  goalId: string,
+  weekNumber: number,
+  updates: Partial<ZkVerification>
+): Promise<void> {
+  try {
+    const { error } = await getClient()
+      .from('zk_verifications')
+      .update(updates)
+      .eq('goal_id', goalId)
+      .eq('week_number', weekNumber);
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error updating ZK verification:', error);
+    throw error;
+  }
+}
+
+export async function getZkVerifications(goalId: string): Promise<ZkVerification[]> {
+  try {
+    const { data, error } = await getClient()
+      .from('zk_verifications')
+      .select('*')
+      .eq('goal_id', goalId)
+      .order('week_number', { ascending: true });
+
+    if (error) throw error;
+    return (data as ZkVerification[]) || [];
+  } catch (error) {
+    console.error('Error getting ZK verifications:', error);
+    throw error;
+  }
+}
+
+export async function getZkVerification(
+  goalId: string,
+  weekNumber: number
+): Promise<ZkVerification | null> {
+  try {
+    const { data, error } = await getClient()
+      .from('zk_verifications')
+      .select('*')
+      .eq('goal_id', goalId)
+      .eq('week_number', weekNumber)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return (data as ZkVerification) || null;
+  } catch (error) {
+    console.error('Error getting ZK verification:', error);
+    throw error;
+  }
+}
+
+// ============================================================
+// PAYMENTS
+// ============================================================
 
 export async function completePayment(chargeId: string): Promise<Payment | null> {
   try {

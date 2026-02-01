@@ -193,3 +193,87 @@ CREATE POLICY "Service role access" ON referees FOR ALL USING (true);
 CREATE POLICY "Service role access" ON votes FOR ALL USING (true);
 CREATE POLICY "Service role access" ON weekly_results FOR ALL USING (true);
 CREATE POLICY "Service role access" ON payments FOR ALL USING (true);
+
+-- ============================================================
+-- TABLE: progress_updates
+-- Progress tracking with photos, location, and EXIF data
+-- ============================================================
+CREATE TABLE progress_updates (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    goal_id UUID NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    week_number INTEGER NOT NULL CHECK (week_number >= 1),
+    photo_urls TEXT[] DEFAULT '{}',
+    location_lat DOUBLE PRECISION,
+    location_lng DOUBLE PRECISION,
+    notes TEXT,
+    exif_timestamp TIMESTAMPTZ,
+    submitted_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_progress_goal_id ON progress_updates(goal_id);
+CREATE INDEX idx_progress_goal_week ON progress_updates(goal_id, week_number);
+
+-- RLS for progress_updates
+ALTER TABLE progress_updates ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service role access" ON progress_updates FOR ALL USING (true);
+
+-- ============================================================
+-- ALTER goals: Add penalty_type and final_vote_status
+-- ============================================================
+ALTER TABLE goals ADD COLUMN penalty_type TEXT DEFAULT 'forfeited'
+    CHECK (penalty_type IN ('delayed_refund', 'split_to_group', 'charity_donation', 'forfeited'));
+ALTER TABLE goals ADD COLUMN final_vote_status TEXT DEFAULT 'not_started'
+    CHECK (final_vote_status IN ('not_started', 'voting', 'finalized'));
+
+-- ============================================================
+-- ZKTLS INTEGRATION: Add verification columns to goals
+-- ============================================================
+ALTER TABLE goals ADD COLUMN verification_type TEXT DEFAULT 'manual'
+    CHECK (verification_type IN ('manual', 'zktls', 'hybrid'));
+ALTER TABLE goals ADD COLUMN reclaim_provider_id TEXT;
+ALTER TABLE goals ADD COLUMN reclaim_provider_name TEXT;
+ALTER TABLE goals ADD COLUMN zk_threshold_value INTEGER;
+ALTER TABLE goals ADD COLUMN zk_threshold_type TEXT;
+
+-- ============================================================
+-- TABLE: zk_verifications
+-- ZKTLS proof records for auto-verification
+-- ============================================================
+CREATE TABLE zk_verifications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    -- References
+    goal_id UUID NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+    week_number INTEGER NOT NULL CHECK (week_number >= 1),
+
+    -- Reclaim proof data
+    provider_id TEXT NOT NULL,
+    provider_name TEXT NOT NULL,
+    proof_hash TEXT,
+    proof_data JSONB,
+
+    -- Extracted values
+    extracted_value TEXT,
+    extracted_parameters JSONB,
+
+    -- Verification status
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'verified', 'failed', 'expired')),
+
+    -- On-chain recording (optional)
+    chain_tx_hash TEXT,
+    chain_block_number INTEGER,
+
+    -- Timestamps
+    requested_at TIMESTAMPTZ DEFAULT NOW(),
+    verified_at TIMESTAMPTZ,
+
+    UNIQUE(goal_id, week_number)
+);
+
+CREATE INDEX idx_zk_verifications_goal ON zk_verifications(goal_id);
+CREATE INDEX idx_zk_verifications_status ON zk_verifications(status);
+
+ALTER TABLE zk_verifications ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Service role access" ON zk_verifications FOR ALL USING (true);
