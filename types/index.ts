@@ -36,6 +36,9 @@ export interface Goal {
   reclaim_provider_name: string | null;
   zk_threshold_value: number | null;
   zk_threshold_type: string | null;
+  hold_months: number | null;
+  frozen_balance_thb: number;
+  frozen_until: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -155,6 +158,8 @@ export interface CreateGoalRequest {
   reclaimProviderName?: string | null;
   zkThresholdValue?: number | null;
   zkThresholdType?: string | null;
+  holdMonths?: number;
+  frozenBalanceThb?: number;
   referees?: Array<{
     userId: string;
     userName: string;

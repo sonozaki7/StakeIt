@@ -167,6 +167,13 @@ export async function POST(
       if (newPassed + newFailed >= freshGoal.duration_weeks) {
         const majorityNeeded = Math.floor(freshGoal.duration_weeks / 2) + 1;
         goalUpdate.status = newPassed >= majorityNeeded ? 'completed' : 'failed';
+
+        // Set frozen_until when goal fails with delayed_refund penalty
+        if (goalUpdate.status === 'failed' && freshGoal.penalty_type === 'delayed_refund' && freshGoal.hold_months) {
+          const freezeUntil = new Date();
+          freezeUntil.setMonth(freezeUntil.getMonth() + freshGoal.hold_months);
+          goalUpdate.frozen_until = freezeUntil.toISOString();
+        }
       }
 
       await updateGoal(goalId, goalUpdate);

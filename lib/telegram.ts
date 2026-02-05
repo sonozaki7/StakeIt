@@ -740,6 +740,17 @@ async function showConfirmation(ctx: CallbackCtx, userId: string, state: Convers
   const goalName = buildGoalName(app, metric, state.target!);
   const penaltyLabel = getPenaltyLabel(state.penaltyType);
 
+  // Check for frozen balance from previous failed goals
+  let frozenNotice = '';
+  try {
+    const { getFrozenBalanceForUser } = await import('@/lib/supabase');
+    const frozenBalance = await getFrozenBalanceForUser(userId);
+    if (frozenBalance > 0) {
+      const totalAtRisk = state.amount! + frozenBalance;
+      frozenNotice = `\n\n⚠️ *Frozen balance: ฿${frozenBalance.toLocaleString()}* from previous failed goal\n💰 *Total at risk: ฿${totalAtRisk.toLocaleString()}* (฿${state.amount!.toLocaleString()} + ฿${frozenBalance.toLocaleString()} frozen)`;
+    }
+  } catch { /* ok */ }
+
   const keyboard = new InlineKeyboard()
     .text('✅ Create Goal', `gc_${userId}`)
     .text('❌ Cancel', `gx_${userId}`);
@@ -755,7 +766,8 @@ async function showConfirmation(ctx: CallbackCtx, userId: string, state: Convers
       (state.charityChoice ? `\n💝 Charity: *${escMd(state.charityChoice)}*` : '') +
       (state.holdMonths ? `\n🧊 Freeze: *${state.holdMonths} month${state.holdMonths > 1 ? 's' : ''}*` : '') +
       `\n💰 Stake: *฿${state.amount!.toLocaleString()}*` +
-      zkBadge + `\n\n` +
+      zkBadge +
+      frozenNotice + `\n\n` +
       `Goal name: "${escMd(goalName)}"\n\n` +
       `Ready to create?`,
       { parse_mode: 'Markdown', reply_markup: keyboard }
@@ -794,7 +806,7 @@ async function handleConvConfirm(ctx: CallbackCtx, userId: string): Promise<void
     const result = await createGoalWithLimitCheck(
       goalName, state.amount, state.weeks,
       userId, userName, chatId, chatTitle,
-      state.target, state.penaltyType
+      state.target, state.penaltyType, state.holdMonths
     );
 
     if ('error' in result) {
@@ -809,6 +821,10 @@ async function handleConvConfirm(ctx: CallbackCtx, userId: string): Promise<void
       ? `\n\n🔐 *Auto-Verification Enabled*\nUse /verify to prove completion via ${escMd(zkProvider.name)}`
       : `\n\n📋 *Manual Verification*\nSend photos or wait for weekly voting`;
 
+    const frozenNotice = result.frozenBalance > 0
+      ? `\n⚠️ Frozen balance: ฿${result.frozenBalance.toLocaleString()} from previous failed goal\n💰 Total at risk: ฿${(state.amount + result.frozenBalance).toLocaleString()} (฿${state.amount.toLocaleString()} + ฿${result.frozenBalance.toLocaleString()} frozen)`
+      : '';
+
     try {
       await ctx.editMessageText(
         `🎯 *Goal Created!*\n\n` +
@@ -816,6 +832,7 @@ async function handleConvConfirm(ctx: CallbackCtx, userId: string): Promise<void
         `💰 Stake: ฿${state.amount.toLocaleString()}\n` +
         `⏱ Duration: ${escMd(state.durationLabel || `${state.weeks} weeks`)}\n` +
         `By: ${escMd(userName)}` +
+        frozenNotice +
         zkNotice + `\n\n` +
         `📱 Scan to pay and activate:`,
         { parse_mode: 'Markdown' }
@@ -1314,9 +1331,14 @@ async function createGoalWithLimitCheck(
   chatId: string,
   chatTitle: string | undefined,
   thresholdOverride?: number,
-  penaltyType?: PenaltyType
-): Promise<{ goal: Goal; qrCodeUrl: string } | { error: string }> {
+  penaltyType?: PenaltyType,
+  holdMonths?: number
+): Promise<{ goal: Goal; qrCodeUrl: string; frozenBalance: number } | { error: string }> {
   const zkProvider = findProviderForGoal(goalName);
+
+  // Query frozen balance from previous failed goals
+  const { getFrozenBalanceForUser } = await import('@/lib/supabase');
+  const frozenBalance = await getFrozenBalanceForUser(userId);
 
   const goal = await createGoal({
     goalName,
@@ -1328,6 +1350,8 @@ async function createGoalWithLimitCheck(
     userId,
     userName,
     penaltyType,
+    holdMonths,
+    frozenBalanceThb: frozenBalance,
     verificationType: zkProvider ? 'zktls' : 'manual',
     reclaimProviderId: zkProvider?.id || null,
     reclaimProviderName: zkProvider?.name || null,
@@ -1344,7 +1368,7 @@ async function createGoalWithLimitCheck(
 
   await createPayment(goal.id, amount, charge.qrCodeUrl, charge.chargeId);
 
-  return { goal, qrCodeUrl: charge.qrCodeUrl };
+  return { goal, qrCodeUrl: charge.qrCodeUrl, frozenBalance };
 }
 
 // ============================================================
@@ -2619,11 +2643,16 @@ export async function notifyGoalActivated(goal: Goal): Promise<void> {
   if (!goal.group_id) return;
 
   try {
+    const frozenInfo = goal.frozen_balance_thb > 0
+      ? `\n💰 Stake: ฿${goal.stake_amount_thb.toLocaleString()} + ฿${goal.frozen_balance_thb.toLocaleString()} frozen = ฿${(goal.stake_amount_thb + goal.frozen_balance_thb).toLocaleString()} total at risk\n`
+      : '';
+
     await bot.api.sendMessage(
       goal.group_id,
       `✅ Payment received!\n\n` +
       `Goal "${goal.goal_name}" is now ACTIVE.\n` +
-      `Period 1 starts now.\n\n` +
+      `Period 1 starts now.\n` +
+      frozenInfo + `\n` +
       `Progress is verified automatically via zkTLS or system API.\n` +
       `Good luck! 💪`
     );
@@ -2661,16 +2690,29 @@ export async function notifyGoalComplete(goal: Goal): Promise<void> {
     const isSuccess = goal.status === 'completed';
     const penaltyLabel = goal.penalty_type.replace(/_/g, ' ');
 
+    let successMsg = `🎉 Congratulations!\n\n` +
+      `${goal.user_name} completed their goal "${goal.goal_name}"!\n` +
+      `฿${goal.stake_amount_thb.toLocaleString()} will be refunded.`;
+
+    if (isSuccess && goal.frozen_balance_thb > 0) {
+      successMsg += `\n🧊 ฿${goal.frozen_balance_thb.toLocaleString()} frozen balance released!`;
+    }
+
+    let failMsg = `😢 Goal Failed\n\n` +
+      `${goal.user_name} did not complete "${goal.goal_name}".\n`;
+
+    if (goal.penalty_type === 'delayed_refund' && goal.frozen_until) {
+      const frozenDate = new Date(goal.frozen_until).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+      failMsg += `🧊 Freeze & Restake: ฿${goal.stake_amount_thb.toLocaleString()} is now frozen until ${frozenDate}.\n` +
+        `This amount will be auto-staked on your next goal.`;
+    } else {
+      failMsg += `Penalty: ${penaltyLabel}\n` +
+        `฿${goal.stake_amount_thb.toLocaleString()} - ${penaltyLabel}.`;
+    }
+
     await bot.api.sendMessage(
       goal.group_id,
-      isSuccess
-        ? `🎉 Congratulations!\n\n` +
-          `${goal.user_name} completed their goal "${goal.goal_name}"!\n` +
-          `฿${goal.stake_amount_thb.toLocaleString()} will be refunded.`
-        : `😢 Goal Failed\n\n` +
-          `${goal.user_name} did not complete "${goal.goal_name}".\n` +
-          `Penalty: ${penaltyLabel}\n` +
-          `฿${goal.stake_amount_thb.toLocaleString()} - ${penaltyLabel}.`
+      isSuccess ? successMsg : failMsg
     );
   } catch (error) {
     console.error('Error sending completion notification:', error);

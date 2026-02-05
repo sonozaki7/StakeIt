@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createGoal, getGoalsByUser, getGoalsByGroup, createPayment, deleteGoal, getActiveGoalCountForUserInGroup } from '@/lib/supabase';
+import { createGoal, getGoalsByUser, getGoalsByGroup, createPayment, deleteGoal, getActiveGoalCountForUserInGroup, getFrozenBalanceForUser } from '@/lib/supabase';
 import { createPromptPayCharge } from '@/lib/omise';
 
 const createGoalSchema = z.object({
@@ -14,6 +14,7 @@ const createGoalSchema = z.object({
   userId: z.string().min(1),
   userName: z.string().min(1),
   penaltyType: z.enum(['delayed_refund', 'split_to_group', 'charity_donation', 'forfeited']).optional(),
+  holdMonths: z.number().int().min(1).max(12).optional(),
   referees: z.array(z.object({
     userId: z.string(),
     userName: z.string(),
@@ -46,8 +47,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
+    // Query frozen balance from previous failed goals
+    const frozenBalance = await getFrozenBalanceForUser(data.userId);
+
     // Create goal in database
-    const goal = await createGoal(data);
+    const goal = await createGoal({
+      ...data,
+      frozenBalanceThb: frozenBalance,
+    });
 
     // Create payment charge — clean up goal if this fails
     let charge;
@@ -79,6 +86,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           status: goal.status,
           paymentQrUrl: charge.qrCodeUrl,
           stakeAmountThb: goal.stake_amount_thb,
+          frozenBalanceThb: goal.frozen_balance_thb,
         },
       },
       { status: 201 }

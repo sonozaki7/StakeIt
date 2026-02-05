@@ -161,6 +161,13 @@ export async function POST(
       if (totalWeeksVoted >= freshGoal.duration_weeks) {
         const majorityWeeks = Math.floor(freshGoal.duration_weeks / 2) + 1;
         goalUpdate.status = newWeeksPassed >= majorityWeeks ? 'completed' : 'failed';
+
+        // Set frozen_until when goal fails with delayed_refund penalty
+        if (goalUpdate.status === 'failed' && freshGoal.penalty_type === 'delayed_refund' && freshGoal.hold_months) {
+          const freezeUntil = new Date();
+          freezeUntil.setMonth(freezeUntil.getMonth() + freshGoal.hold_months);
+          goalUpdate.frozen_until = freezeUntil.toISOString();
+        }
       } else {
         goalUpdate.current_week = week + 1;
       }

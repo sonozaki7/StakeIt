@@ -277,3 +277,10 @@ CREATE INDEX idx_zk_verifications_status ON zk_verifications(status);
 
 ALTER TABLE zk_verifications ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Service role access" ON zk_verifications FOR ALL USING (true);
+
+-- ============================================================
+-- ALTER goals: Add freeze & restake columns
+-- ============================================================
+ALTER TABLE goals ADD COLUMN hold_months INTEGER;
+ALTER TABLE goals ADD COLUMN frozen_balance_thb INTEGER DEFAULT 0;
+ALTER TABLE goals ADD COLUMN frozen_until TIMESTAMPTZ;

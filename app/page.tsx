@@ -20,8 +20,8 @@ export default function HomePage(): React.ReactElement {
           Put Your Money Where<br />Your Mouth Is
         </h2>
         <p className="text-xl text-gray-600 dark:text-gray-300 mb-8 max-w-2xl mx-auto">
-          Create commitment contracts, stake real money, and let your friends
-          hold you accountable. Complete your goals or lose your stake.
+          Create commitment contracts with real apps you already use. Stake real money,
+          get verified automatically via zkTLS, and succeed or face the consequences.
         </p>
         <div className="flex gap-4 justify-center">
           <Link
@@ -31,7 +31,7 @@ export default function HomePage(): React.ReactElement {
             Create a Goal
           </Link>
           <a
-            href="https://t.me/StakeItBot"
+            href="https://t.me/stakeIt_demo_bot"
             target="_blank"
             rel="noopener noreferrer"
             className="border-2 border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400 px-8 py-3 rounded-lg text-lg font-semibold hover:bg-indigo-50 dark:hover:bg-gray-700 transition-colors"
@@ -50,26 +50,26 @@ export default function HomePage(): React.ReactElement {
           {[
             {
               step: '1',
-              title: 'Set a Goal',
-              desc: 'Define your commitment and how long you want to pursue it.',
+              title: 'Pick an App',
+              desc: 'Choose from Duolingo, GitHub, Strava, LeetCode, or Headspace and set a target.',
               icon: '🎯',
             },
             {
               step: '2',
               title: 'Stake Money',
-              desc: 'Put down real money via PromptPay to show you mean it.',
+              desc: 'Put down real money via PromptPay. Choose what happens if you fail.',
               icon: '💰',
             },
             {
               step: '3',
               title: 'Get Verified',
-              desc: 'Your friends vote weekly on whether you completed your goal.',
-              icon: '👥',
+              desc: 'Progress is verified automatically via zkTLS — cryptographic proof from the app itself.',
+              icon: '🔐',
             },
             {
               step: '4',
               title: 'Win or Lose',
-              desc: 'Pass majority of weeks and get your money back. Fail and lose it.',
+              desc: 'Succeed and get your money back. Fail and face your chosen penalty.',
               icon: '🏆',
             },
           ].map((item) => (
@@ -130,7 +130,7 @@ export default function HomePage(): React.ReactElement {
       {/* Footer */}
       <footer className="container mx-auto px-4 py-8 border-t border-gray-200 dark:border-gray-700 mt-16">
         <div className="text-center text-gray-500 dark:text-gray-400">
-          <p>&copy; 2025 StakeIt. Put your money where your mouth is.</p>
+          <p>&copy; 2026 StakeIt. Put your money where your mouth is.</p>
         </div>
       </footer>
     </div>

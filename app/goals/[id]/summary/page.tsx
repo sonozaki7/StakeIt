@@ -59,10 +59,10 @@ export default function GoalSummaryPage(): React.ReactElement {
   }
 
   const penaltyLabels: Record<string, string> = {
-    forfeited: 'Forfeited',
-    delayed_refund: 'Delayed Refund (30 days)',
-    split_to_group: 'Split Among Group Members',
-    charity_donation: 'Donated to Charity',
+    forfeited: '🔥 Donate to StakeIt',
+    delayed_refund: '🧊 Freeze & Restake',
+    split_to_group: '👥 Split to Group',
+    charity_donation: '💝 Charity Donation',
   };
 
   const isFinalized = goal.final_vote_status === 'finalized' || goal.status === 'completed' || goal.status === 'failed';
@@ -105,6 +105,27 @@ export default function GoalSummaryPage(): React.ReactElement {
                   : `Goal Failed. ${penaltyLabels[goal.penalty_type] || goal.penalty_type}: ฿${goal.stake_amount_thb.toLocaleString()}`
                 }
               </div>
+              {goal.status === 'completed' && goal.frozen_balance_thb > 0 && (
+                <p className="text-sm mt-1">
+                  🧊 ฿{goal.frozen_balance_thb.toLocaleString()} frozen balance released!
+                </p>
+              )}
+              {goal.status === 'failed' && goal.penalty_type === 'delayed_refund' && goal.frozen_until && (
+                <p className="text-sm mt-1">
+                  🧊 Frozen until {new Date(goal.frozen_until).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}.
+                  This stake will be added to your next goal.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Frozen balance info */}
+          {goal.frozen_balance_thb > 0 && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg mb-6 text-center">
+              <span className="text-sm text-blue-700 dark:text-blue-400">
+                🧊 Includes ฿{goal.frozen_balance_thb.toLocaleString()} frozen from previous failure.
+                Total at risk: ฿{(goal.stake_amount_thb + goal.frozen_balance_thb).toLocaleString()}
+              </span>
             </div>
           )}
 

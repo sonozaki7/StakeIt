@@ -150,10 +150,10 @@ export default function GoalDetailPage(): React.ReactElement {
   };
 
   const penaltyLabels: Record<string, string> = {
-    forfeited: 'Forfeited',
-    delayed_refund: 'Delayed Refund',
-    split_to_group: 'Split to Group',
-    charity_donation: 'Charity Donation',
+    forfeited: '🔥 Donate to StakeIt',
+    delayed_refund: '🧊 Freeze & Restake',
+    split_to_group: '👥 Split to Group',
+    charity_donation: '💝 Charity Donation',
   };
 
   return (
@@ -192,6 +192,26 @@ export default function GoalDetailPage(): React.ReactElement {
               </span>
             </span>
           </div>
+
+          {/* Frozen balance info */}
+          {goal.frozen_balance_thb > 0 && (
+            <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+              <span className="text-sm text-blue-700 dark:text-blue-400">
+                🧊 Includes ฿{goal.frozen_balance_thb.toLocaleString()} frozen from previous failure.
+                Total at risk: ฿{(goal.stake_amount_thb + goal.frozen_balance_thb).toLocaleString()}
+              </span>
+            </div>
+          )}
+
+          {/* Freeze info for failed goals */}
+          {goal.status === 'failed' && goal.penalty_type === 'delayed_refund' && goal.frozen_until && (
+            <div className="mb-4 p-3 bg-cyan-50 dark:bg-cyan-900/20 rounded-lg">
+              <span className="text-sm text-cyan-700 dark:text-cyan-400">
+                🧊 Frozen until {new Date(goal.frozen_until).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}.
+                This stake will be added to your next goal.
+              </span>
+            </div>
+          )}
 
           {/* Stats */}
           <div className="grid grid-cols-3 gap-4 mt-6">

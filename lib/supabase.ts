@@ -52,6 +52,8 @@ export async function createGoal(data: CreateGoalRequest): Promise<Goal> {
         reclaim_provider_name: data.reclaimProviderName || null,
         zk_threshold_value: data.zkThresholdValue || null,
         zk_threshold_type: data.zkThresholdType || null,
+        hold_months: data.holdMonths || null,
+        frozen_balance_thb: data.frozenBalanceThb || 0,
       })
       .select()
       .single();
@@ -68,6 +70,26 @@ export async function createGoal(data: CreateGoalRequest): Promise<Goal> {
     return goal as Goal;
   } catch (error) {
     console.error('Error creating goal:', error);
+    throw error;
+  }
+}
+
+export async function getFrozenBalanceForUser(userId: string): Promise<number> {
+  try {
+    const { data, error } = await getClient()
+      .from('goals')
+      .select('stake_amount_thb')
+      .eq('user_id', userId)
+      .eq('status', 'failed')
+      .eq('penalty_type', 'delayed_refund')
+      .not('frozen_until', 'is', null);
+
+    if (error) throw error;
+    if (!data || data.length === 0) return 0;
+
+    return data.reduce((sum: number, g: { stake_amount_thb: number }) => sum + g.stake_amount_thb, 0);
+  } catch (error) {
+    console.error('Error getting frozen balance for user:', error);
     throw error;
   }
 }
